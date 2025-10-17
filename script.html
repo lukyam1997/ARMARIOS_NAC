@@ -1,0 +1,1694 @@
+<script>
+(() => {
+  const hasAppsScript = typeof google !== 'undefined' && google.script && google.script.run;
+
+  const MockBackend = (() => {
+    const bootstrap = {
+      unidades: [
+        { id: 1, nome: 'NAC Eletiva', status: 'ativa' },
+        { id: 2, nome: 'UIB', status: 'ativa' }
+      ],
+      armarios: [
+        { id: 1, numero: 'V-01', status: 'livre', tipo: 'visitante', unidade: 'NAC Eletiva', localizacao: 'Bloco A - Térreo', termoAplicado: false },
+        { id: 2, numero: 'V-02', status: 'em-uso', tipo: 'visitante', unidade: 'NAC Eletiva', localizacao: 'Bloco A - Térreo', nomeVisitante: 'Maria Silva', nomePaciente: 'João Santos', leito: '201-A', volumes: 2, horaInicio: '14:30', horaPrevista: '16:30', termoAplicado: false },
+        { id: 3, numero: 'V-03', status: 'proximo', tipo: 'visitante', unidade: 'UIB', localizacao: 'Bloco A - Térreo', nomeVisitante: 'Carlos Oliveira', nomePaciente: 'Ana Costa', leito: '305-B', volumes: 1, horaInicio: '13:15', horaPrevista: '15:15', termoAplicado: false },
+        { id: 4, numero: 'V-04', status: 'vencido', tipo: 'visitante', unidade: 'UIB', localizacao: 'Bloco A - Térreo', nomeVisitante: 'Roberta Lima', nomePaciente: 'Pedro Alves', leito: '102-C', volumes: 3, horaInicio: '10:00', horaPrevista: '12:00', termoAplicado: false },
+        { id: 5, numero: 'A-01', status: 'livre', tipo: 'acompanhante', unidade: 'NAC Eletiva', localizacao: 'Bloco B - 1º Andar', termoAplicado: false },
+        { id: 6, numero: 'A-02', status: 'em-uso', tipo: 'acompanhante', unidade: 'UIB', localizacao: 'Bloco B - 1º Andar', nomeVisitante: 'Fernanda Rocha', nomePaciente: 'Luiz Mendes', leito: '401-D', volumes: 4, horaInicio: '09:45', termoAplicado: true },
+        { id: 7, numero: 'A-03', status: 'proximo', tipo: 'acompanhante', unidade: 'UIB', localizacao: 'Bloco B - 1º Andar', nomeVisitante: 'Ricardo Nunes', nomePaciente: 'Sofia Pereira', leito: '208-E', volumes: 2, horaInicio: '11:20', termoAplicado: false }
+      ],
+      termos: {
+        6: {
+          paciente: 'Luiz Mendes',
+          prontuario: '987654',
+          nascimento: '1980-02-14',
+          setor: 'UTI Geral',
+          leito: '401-D',
+          consciente: 'Não',
+          acompanhante: 'Fernanda Rocha',
+          telefone: '(85) 98888-1122',
+          documento: '123.456.789-00',
+          parentesco: 'Esposa',
+          orientacoes: ['ori1', 'ori2', 'ori3'],
+          volumes: [
+            { quantidade: 2, descricao: 'Mala de roupas' },
+            { quantidade: 2, descricao: 'Sacola com itens pessoais' }
+          ],
+          descricaoVolumes: '2x Mala de roupas; 2x Sacola com itens pessoais',
+          aplicadoEm: '2024-01-14T09:50:00'
+        }
+      },
+      movimentacoes: {
+        6: [
+          {
+            tipo: 'entrada',
+            descricao: 'Entrada inicial dos pertences',
+            responsavel: 'Fernanda Rocha',
+            data: '2024-01-14',
+            hora: '09:50'
+          }
+        ]
+      },
+      historico: [
+        { data: '2024-01-15 14:30', armario: 'V-02', visitante: 'Maria Silva', paciente: 'João Santos', leito: '201-A', volumes: 2, horaInicio: '14:30', horaFim: '16:30', status: 'FINALIZADO' },
+        { data: '2024-01-15 13:15', armario: 'V-03', visitante: 'Carlos Oliveira', paciente: 'Ana Costa', leito: '305-B', volumes: 1, horaInicio: '13:15', horaFim: '15:15', status: 'FINALIZADO' },
+        { data: '2024-01-15 10:00', armario: 'V-04', visitante: 'Roberta Lima', paciente: 'Pedro Alves', leito: '102-C', volumes: 3, horaInicio: '10:00', horaFim: '12:00', status: 'FINALIZADO' },
+        { data: '2024-01-14 09:45', armario: 'A-02', acompanhante: 'Fernanda Rocha', paciente: 'Luiz Mendes', leito: '401-D', volumes: 4, horaInicio: '09:45', horaFim: '18:00', status: 'FINALIZADO' }
+      ],
+      usuarios: [
+        { id: 1, nome: 'João Silva', email: 'joao.silva@hospital.com', perfil: 'admin', acessoVisitantes: true, acessoAcompanhantes: true },
+        { id: 2, nome: 'Maria Santos', email: 'maria.santos@hospital.com', perfil: 'usuario', acessoVisitantes: true, acessoAcompanhantes: false },
+        { id: 3, nome: 'Carlos Oliveira', email: 'carlos.oliveira@hospital.com', perfil: 'usuario', acessoVisitantes: false, acessoAcompanhantes: true }
+      ],
+      logs: [
+        { dataHora: '2024-01-15 16:35:00', usuario: 'joao.silva@hospital.com', acao: 'LIBERAÇÃO', detalhes: 'Armário V-02 liberado' },
+        { dataHora: '2024-01-15 16:30:00', usuario: 'sistema', acao: 'NOTIFICAÇÃO', detalhes: 'Armário V-04 vencido' },
+        { dataHora: '2024-01-15 15:15:00', usuario: 'maria.santos@hospital.com', acao: 'CADASTRO', detalhes: 'Armário V-03 cadastrado para Carlos Oliveira' },
+        { dataHora: '2024-01-15 14:30:00', usuario: 'carlos.oliveira@hospital.com', acao: 'CADASTRO', detalhes: 'Armário A-02 cadastrado para Fernanda Rocha' }
+      ],
+      cadastroArmarios: [
+        { id: 1, numero: 'V-01', tipo: 'visitante', unidade: 'NAC Eletiva', localizacao: 'Bloco A - Térreo', status: 'ativo' },
+        { id: 2, numero: 'V-02', tipo: 'visitante', unidade: 'NAC Eletiva', localizacao: 'Bloco A - Térreo', status: 'ativo' },
+        { id: 3, numero: 'V-03', tipo: 'visitante', unidade: 'UIB', localizacao: 'Bloco A - Térreo', status: 'ativo' },
+        { id: 4, numero: 'A-01', tipo: 'acompanhante', unidade: 'NAC Eletiva', localizacao: 'Bloco B - 1º Andar', status: 'ativo' },
+        { id: 5, numero: 'A-02', tipo: 'acompanhante', unidade: 'UIB', localizacao: 'Bloco B - 1º Andar', status: 'ativo' }
+      ],
+      notificacoes: [
+        { tipo: 'danger', titulo: 'Armário V-15 vencido', tempo: 'Há 5 minutos' },
+        { tipo: 'danger', titulo: 'Armário V-32 vencido', tempo: 'Há 12 minutos' },
+        { tipo: 'warning', titulo: 'Armário A-07 próximo do horário', tempo: 'Há 2 minutos' }
+      ]
+    };
+
+    const clone = (value) => JSON.parse(JSON.stringify(value));
+
+    return {
+      bootstrap() {
+        return clone(bootstrap);
+      }
+    };
+  })();
+
+  const ApiClient = (() => {
+    function executar(method, params) {
+      return new Promise((resolve, reject) => {
+        google.script.run
+          .withSuccessHandler(resolve)
+          .withFailureHandler(reject)[method](params);
+      });
+    }
+
+    async function bootstrap() {
+      if (!hasAppsScript) {
+        return MockBackend.bootstrap();
+      }
+
+      try {
+        const [unidadesRes, cadastroRes, usuariosRes, logsRes, notificacoesRes] = await Promise.all([
+          executar('getUnidades'),
+          executar('getCadastroArmarios'),
+          executar('getUsuarios'),
+          executar('getLogs'),
+          executar('getNotificacoes')
+        ]);
+
+        return {
+          unidades: unidadesRes.data || [],
+          armarios: [],
+          termos: {},
+          movimentacoes: {},
+          historico: [],
+          usuarios: usuariosRes.data || [],
+          logs: logsRes.data || [],
+          cadastroArmarios: cadastroRes.data || [],
+          notificacoes: notificacoesRes.data || []
+        };
+      } catch (error) {
+        console.error('Erro ao carregar dados iniciais', error);
+        return MockBackend.bootstrap();
+      }
+    }
+
+    return {
+      bootstrap,
+      call(method, params) {
+        if (!hasAppsScript) {
+          return Promise.reject(new Error('Integração com Apps Script indisponível.'));
+        }
+        return executar(method, params);
+      }
+    };
+  })();
+
+  const AppState = (() => {
+    const state = {
+      perfilAtual: 'admin',
+      unidadeAtual: 'todas',
+      filtroAtual: 'todos',
+      paginaAtual: 'dashboard',
+      armarios: [],
+      cadastroArmarios: [],
+      unidades: [],
+      notificacoes: [],
+      termos: {},
+      movimentacoes: {},
+      historico: [],
+      usuarios: [],
+      logs: []
+    };
+
+    return {
+      get(key) {
+        if (typeof key === 'string') {
+          return state[key];
+        }
+        return { ...state };
+      },
+      set(key, value) {
+        state[key] = value;
+      },
+      patch(partial) {
+        Object.assign(state, partial);
+      }
+    };
+  })();
+
+  const Elements = {};
+
+  function cacheElements() {
+    Object.assign(Elements, {
+      sidebarLinks: document.querySelectorAll('.sidebar__link'),
+      pages: document.querySelectorAll('.page'),
+      headerTitle: document.getElementById('app-page-title'),
+      profileSelect: document.getElementById('profile-select'),
+      unitSelect: document.getElementById('unit-select'),
+      notificationBell: document.getElementById('notification-bell'),
+      notificationBadge: document.getElementById('notification-badge'),
+      notificationPanel: document.getElementById('notification-panel'),
+      notificationList: document.getElementById('notification-list'),
+      notificationEmpty: document.getElementById('notification-empty'),
+      filterButtons: document.querySelectorAll('.filter-btn'),
+      armariosContainer: document.getElementById('armarios-container'),
+      cardsCount: {
+        livres: document.getElementById('livres-count'),
+        emUso: document.getElementById('em-uso-count'),
+        proximo: document.getElementById('proximo-count'),
+        vencidos: document.getElementById('vencidos-count')
+      },
+      tabelaVisitantesBody: document.querySelector('#tabela-visitantes tbody'),
+      tabelaAcompanhantesBody: document.querySelector('#tabela-acompanhantes tbody'),
+      tabelaHistoricoVisitantesBody: document.querySelector('#tabela-historico-visitantes tbody'),
+      tabelaHistoricoAcompanhantesBody: document.querySelector('#tabela-historico-acompanhantes tbody'),
+      tabelaCadastroArmariosBody: document.querySelector('#tabela-cadastro-armarios tbody'),
+      tabelaUnidadesBody: document.querySelector('#tabela-unidades tbody'),
+      tabelaUsuariosBody: document.querySelector('#tabela-usuarios tbody'),
+      tabelaLogsBody: document.querySelector('#tabela-logs tbody'),
+      tabelaTermosBody: document.querySelector('#tabela-termos tbody'),
+      btnNovoVisitante: document.getElementById('btn-novo-visitante'),
+      btnNovoAcompanhante: document.getElementById('btn-novo-acompanhante'),
+      btnNovoArmario: document.getElementById('btn-novo-armario'),
+      btnNovaUnidade: document.getElementById('btn-nova-unidade'),
+      btnNovoUsuario: document.getElementById('btn-novo-usuario'),
+      armarioModal: document.getElementById('armario-modal'),
+      armarioForm: document.getElementById('armario-form'),
+      armarioModalClose: document.getElementById('modal-close'),
+      btnCancelarArmario: document.getElementById('btn-cancelar'),
+      usuarioModal: document.getElementById('usuario-modal'),
+      usuarioForm: document.getElementById('usuario-form'),
+      usuarioModalClose: document.getElementById('usuario-modal-close'),
+      usuarioBtnCancelar: document.getElementById('usuario-btn-cancelar'),
+      termoModal: document.getElementById('termo-modal'),
+      termoModalClose: document.getElementById('termo-modal-close'),
+      termoBtnVoltar: document.getElementById('termo-btn-voltar'),
+      termoBtnAvancar: document.getElementById('termo-btn-avancar'),
+      termoBtnCancelar: document.getElementById('termo-btn-cancelar'),
+      termoProgress: document.getElementById('termo-progress'),
+      termoProgressLabel: document.getElementById('termo-progress-label'),
+      termoArmario: document.getElementById('termo-armario'),
+      termoForm: document.getElementById('termo-form'),
+      termoVolumesList: document.getElementById('termo-volumes-list'),
+      termoAddVolume: document.getElementById('termo-add-volume'),
+      termoVolumesField: document.getElementById('termo-volumes-field'),
+      termoAddOrientacao: document.getElementById('termo-add-orientacao'),
+      termoOrientacoes: document.getElementById('termo-orientacoes'),
+      movimentacaoModal: document.getElementById('movimentacao-modal'),
+      movimentacaoModalClose: document.getElementById('movimentacao-modal-close'),
+      movimentacoesList: document.getElementById('movimentacoes-list'),
+      movimentacaoForm: document.getElementById('movimentacao-form'),
+      liberacaoModal: document.getElementById('liberacao-modal'),
+      liberacaoModalClose: document.getElementById('liberacao-modal-close'),
+      liberacaoDetalhes: document.getElementById('liberacao-detalhes'),
+      liberacaoArmario: document.getElementById('liberacao-armario'),
+      liberacaoSlider: document.getElementById('liberacao-slider'),
+      liberacaoCheckbox: document.getElementById('liberacao-checkbox'),
+      liberacaoData: document.getElementById('liberacao-data'),
+      liberacaoBtnCancelar: document.getElementById('liberacao-btn-cancelar'),
+      liberacaoBtnConfirmar: document.getElementById('liberacao-btn-confirmar'),
+      assinaturaCanvas: document.getElementById('signature-canvas'),
+      assinaturaClear: document.getElementById('signature-clear'),
+      assinaturaArea: document.getElementById('assinatura-area'),
+      cpfArea: document.getElementById('cpf-area'),
+      cpfConfirmacao: document.getElementById('cpf-confirmacao'),
+      liberacaoMetodoRadios: document.querySelectorAll('input[name="liberacao-metodo"]')
+    });
+  }
+
+  let termoPassoAtual = 0;
+  let termoArmarioAtual = null;
+  let movimentacaoArmarioAtual = null;
+  let liberacaoArmarioAtual = null;
+  let assinaturaDesenhada = false;
+  let desenhandoAssinatura = false;
+
+  function iniciarLoadingBotao(botao) {
+    if (!botao) {
+      return () => {};
+    }
+
+    const inicio = Date.now();
+    const duracaoMinima = 300;
+    botao.classList.add('btn-loading');
+    botao.disabled = true;
+
+    return () => {
+      const encerrar = () => {
+        botao.classList.remove('btn-loading');
+        botao.disabled = false;
+      };
+
+      const decorrido = Date.now() - inicio;
+      if (decorrido < duracaoMinima) {
+        setTimeout(encerrar, duracaoMinima - decorrido);
+      } else {
+        encerrar();
+      }
+    };
+  }
+
+  function configurarBotaoAcao(botao, acao) {
+    if (!botao) {
+      return;
+    }
+
+    botao.addEventListener('click', async (event) => {
+      const finalizar = iniciarLoadingBotao(event.currentTarget);
+      try {
+        await acao();
+      } finally {
+        finalizar();
+      }
+    });
+  }
+
+  function abrirModal(modal) {
+    if (modal) {
+      modal.classList.add('modal--visible');
+    }
+  }
+
+  function fecharModal(modal) {
+    if (modal) {
+      modal.classList.remove('modal--visible');
+    }
+  }
+
+  function alternarMetodoLiberacao() {
+    if (!Elements.liberacaoMetodoRadios) {
+      return;
+    }
+
+    const metodo = Array.from(Elements.liberacaoMetodoRadios).find((radio) => radio.checked)?.value;
+    if (metodo === 'cpf') {
+      Elements.assinaturaArea.classList.add('is-hidden');
+      Elements.cpfArea.classList.remove('is-hidden');
+    } else {
+      Elements.assinaturaArea.classList.remove('is-hidden');
+      Elements.cpfArea.classList.add('is-hidden');
+    }
+
+    atualizarEstadoLiberacao();
+  }
+
+  function iniciarAssinatura(event) {
+    assinaturaDesenhada = true;
+    desenhandoAssinatura = true;
+    const ctx = Elements.assinaturaCanvas.getContext('2d');
+    ctx.strokeStyle = '#1a4a63';
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    const ponto = getCoordenadasAssinatura(event);
+    ctx.moveTo(ponto.x, ponto.y);
+  }
+
+  function desenharAssinatura(event) {
+    if (!desenhandoAssinatura) {
+      return;
+    }
+
+    event.preventDefault();
+    const ctx = Elements.assinaturaCanvas.getContext('2d');
+    const ponto = getCoordenadasAssinatura(event);
+    ctx.lineTo(ponto.x, ponto.y);
+    ctx.stroke();
+  }
+
+  function finalizarAssinatura() {
+    desenhandoAssinatura = false;
+    atualizarEstadoLiberacao();
+  }
+
+  function getCoordenadasAssinatura(event) {
+    const rect = Elements.assinaturaCanvas.getBoundingClientRect();
+    const pointer = event.touches ? event.touches[0] : event;
+    return {
+      x: pointer.clientX - rect.left,
+      y: pointer.clientY - rect.top
+    };
+  }
+
+  function limparAssinatura() {
+    const ctx = Elements.assinaturaCanvas.getContext('2d');
+    ctx.clearRect(0, 0, Elements.assinaturaCanvas.width, Elements.assinaturaCanvas.height);
+    assinaturaDesenhada = false;
+  }
+
+  function atualizarEstadoLiberacao() {
+    if (!Elements.liberacaoBtnConfirmar) {
+      return;
+    }
+
+    const sliderConcluido = Number(Elements.liberacaoSlider.value) >= 100;
+    const termoMarcado = Elements.liberacaoCheckbox.checked;
+    const metodo = Array.from(Elements.liberacaoMetodoRadios || []).find((radio) => radio.checked)?.value;
+    let metodoValido = false;
+
+    if (metodo === 'cpf') {
+      metodoValido = (Elements.cpfConfirmacao.value || '').length === 5;
+    } else {
+      metodoValido = assinaturaDesenhada;
+    }
+
+    Elements.liberacaoBtnConfirmar.disabled = !(sliderConcluido && termoMarcado && metodoValido);
+  }
+
+  function bindNavigation() {
+    Elements.sidebarLinks.forEach((link) => {
+      link.addEventListener('click', (event) => {
+        event.preventDefault();
+        const pagina = link.getAttribute('data-page');
+        navegarParaPagina(pagina);
+      });
+    });
+  }
+
+  function bindFilters() {
+    Elements.filterButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        Elements.filterButtons.forEach((btn) => btn.classList.remove('active'));
+        button.classList.add('active');
+        AppState.set('filtroAtual', button.dataset.filter);
+        renderizarArmarios();
+      });
+    });
+  }
+
+  function bindSelectors() {
+    if (Elements.profileSelect) {
+      Elements.profileSelect.addEventListener('change', () => {
+        AppState.set('perfilAtual', Elements.profileSelect.value);
+        atualizarInterface();
+      });
+    }
+
+    if (Elements.unitSelect) {
+      Elements.unitSelect.addEventListener('change', () => {
+        AppState.set('unidadeAtual', Elements.unitSelect.value);
+        atualizarInterface();
+        carregarDadosTabelas();
+      });
+    }
+  }
+
+  function bindNotifications() {
+    if (Elements.notificationBell) {
+      Elements.notificationBell.addEventListener('click', () => {
+        if (!Elements.notificationPanel) return;
+        const exibindo = Elements.notificationPanel.style.display === 'flex';
+        Elements.notificationPanel.style.display = exibindo ? 'none' : 'flex';
+      });
+    }
+
+    document.addEventListener('click', (event) => {
+      if (!Elements.notificationPanel || !Elements.notificationBell) {
+        return;
+      }
+
+      if (Elements.notificationBell.contains(event.target)) {
+        return;
+      }
+
+      if (!Elements.notificationPanel.contains(event.target)) {
+        Elements.notificationPanel.style.display = 'none';
+      }
+    });
+  }
+
+  function bindTables() {
+    Elements.tabelaVisitantesBody?.addEventListener('click', tratarAcoesTabelaVisitantes);
+    Elements.tabelaAcompanhantesBody?.addEventListener('click', tratarAcoesTabelaAcompanhantes);
+    Elements.tabelaUsuariosBody?.addEventListener('click', tratarAcoesUsuarios);
+    Elements.tabelaCadastroArmariosBody?.addEventListener('click', tratarAcoesCadastroArmarios);
+    Elements.tabelaTermosBody?.addEventListener('click', tratarAcaoTermo);
+    Elements.tabelaUnidadesBody?.addEventListener('click', tratarAcaoUnidade);
+  }
+
+  function bindModals() {
+    Elements.armarioModalClose?.addEventListener('click', () => fecharModal(Elements.armarioModal));
+    Elements.btnCancelarArmario?.addEventListener('click', () => fecharModal(Elements.armarioModal));
+    Elements.usuarioModalClose?.addEventListener('click', () => fecharModal(Elements.usuarioModal));
+    Elements.usuarioBtnCancelar?.addEventListener('click', () => fecharModal(Elements.usuarioModal));
+    Elements.termoModalClose?.addEventListener('click', () => fecharModal(Elements.termoModal));
+    Elements.termoBtnCancelar?.addEventListener('click', () => fecharModal(Elements.termoModal));
+    Elements.movimentacaoModalClose?.addEventListener('click', () => fecharModal(Elements.movimentacaoModal));
+    Elements.liberacaoModalClose?.addEventListener('click', fecharModalLiberacao);
+    Elements.liberacaoBtnCancelar?.addEventListener('click', fecharModalLiberacao);
+  }
+
+  function bindForms() {
+    Elements.armarioForm?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      salvarArmario();
+    });
+
+    Elements.usuarioForm?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      salvarUsuario();
+    });
+
+    Elements.movimentacaoForm?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      salvarMovimentacao();
+    });
+
+    configurarBotaoAcao(Elements.btnNovoVisitante, () => abrirModalArmario('visitante'));
+    configurarBotaoAcao(Elements.btnNovoAcompanhante, () => abrirModalArmario('acompanhante'));
+    configurarBotaoAcao(Elements.btnNovoArmario, abrirModalCadastroArmarioFisico);
+    configurarBotaoAcao(Elements.btnNovaUnidade, cadastrarNovaUnidade);
+    configurarBotaoAcao(Elements.btnNovoUsuario, () => abrirModal(Elements.usuarioModal));
+    configurarBotaoAcao(Elements.termoBtnAvancar, avancarWizard);
+    configurarBotaoAcao(Elements.termoBtnVoltar, voltarWizard);
+
+    Elements.termoAddVolume?.addEventListener('click', adicionarVolumeWizard);
+    Elements.termoAddOrientacao?.addEventListener('click', adicionarOrientacaoWizard);
+
+    Elements.liberacaoSlider?.addEventListener('input', atualizarEstadoLiberacao);
+    Elements.liberacaoCheckbox?.addEventListener('change', atualizarEstadoLiberacao);
+    Elements.liberacaoBtnConfirmar?.addEventListener('click', confirmarLiberacao);
+    Elements.assinaturaClear?.addEventListener('click', () => {
+      limparAssinatura();
+      atualizarEstadoLiberacao();
+    });
+    Elements.cpfConfirmacao?.addEventListener('input', () => {
+      Elements.cpfConfirmacao.value = Elements.cpfConfirmacao.value.replace(/\D/g, '').slice(0, 5);
+      atualizarEstadoLiberacao();
+    });
+    Elements.liberacaoMetodoRadios?.forEach((radio) => radio.addEventListener('change', alternarMetodoLiberacao));
+
+    if (Elements.assinaturaCanvas) {
+      Elements.assinaturaCanvas.addEventListener('pointerdown', iniciarAssinatura);
+      Elements.assinaturaCanvas.addEventListener('pointermove', desenharAssinatura);
+      Elements.assinaturaCanvas.addEventListener('pointerup', finalizarAssinatura);
+      Elements.assinaturaCanvas.addEventListener('pointerleave', finalizarAssinatura);
+      Elements.assinaturaCanvas.addEventListener('pointercancel', finalizarAssinatura);
+    }
+  }
+
+  function navegarParaPagina(pagina) {
+    AppState.set('paginaAtual', pagina);
+
+    Elements.sidebarLinks.forEach((link) => link.classList.remove('sidebar__link--active'));
+    const linkAtivo = document.querySelector(`.sidebar__link[data-page="${pagina}"]`);
+    linkAtivo?.classList.add('sidebar__link--active');
+
+    Elements.pages.forEach((page) => page.classList.remove('page--active'));
+    const page = document.getElementById(pagina);
+    if (page) {
+      page.classList.add('page--active');
+      const titulo = page.getAttribute('data-page-title') || linkAtivo?.querySelector('.sidebar__label')?.textContent || 'Dashboard';
+      Elements.headerTitle.textContent = titulo;
+    }
+
+    if (pagina === 'dashboard') {
+      renderizarArmarios();
+    }
+  }
+
+  function filtrarArmariosPorPerfilEUnidade() {
+    const armarios = AppState.get('armarios') || [];
+    const perfil = AppState.get('perfilAtual');
+    const unidade = AppState.get('unidadeAtual');
+
+    return armarios.filter((armario) => {
+      const perfilOk =
+        perfil === 'admin' ||
+        perfil === 'ambos' ||
+        armario.tipo === perfil ||
+        (perfil === 'visitante' && armario.tipo === 'visitante') ||
+        (perfil === 'acompanhante' && armario.tipo === 'acompanhante');
+      const unidadeOk = unidade === 'todas' || armario.unidade === unidade;
+      return perfilOk && unidadeOk;
+    });
+  }
+
+  function atualizarInterface() {
+    atualizarSeletoresUnidade();
+    atualizarEstatisticas();
+    renderizarNotificacoes();
+    renderizarArmarios();
+  }
+
+  function atualizarSeletoresUnidade() {
+    if (!Elements.unitSelect) {
+      return;
+    }
+
+    const unidades = AppState.get('unidades') || [];
+    const atual = AppState.get('unidadeAtual');
+    Elements.unitSelect.innerHTML = '<option value="todas">Todas as unidades</option>';
+    unidades.forEach((unidade) => {
+      const option = document.createElement('option');
+      option.value = unidade.nome;
+      option.textContent = unidade.nome;
+      if (unidade.nome === atual) {
+        option.selected = true;
+      }
+      Elements.unitSelect.appendChild(option);
+    });
+  }
+
+  function atualizarEstatisticas() {
+    const armarios = filtrarArmariosPorPerfilEUnidade();
+    Elements.cardsCount.livres.textContent = armarios.filter((a) => a.status === 'livre').length;
+    Elements.cardsCount.emUso.textContent = armarios.filter((a) => a.status === 'em-uso').length;
+    Elements.cardsCount.proximo.textContent = armarios.filter((a) => a.status === 'proximo').length;
+    Elements.cardsCount.vencidos.textContent = armarios.filter((a) => a.status === 'vencido').length;
+  }
+
+  function renderizarNotificacoes() {
+    if (!Elements.notificationList) {
+      return;
+    }
+
+    const notificacoes = AppState.get('notificacoes') || [];
+    Elements.notificationList.innerHTML = '';
+
+    if (notificacoes.length === 0) {
+      if (Elements.notificationEmpty) {
+        Elements.notificationEmpty.classList.remove('is-hidden');
+        Elements.notificationList.appendChild(Elements.notificationEmpty);
+      }
+    } else {
+      Elements.notificationEmpty?.classList.add('is-hidden');
+      notificacoes.forEach((notificacao) => {
+        const item = document.createElement('div');
+        item.className = 'notification-item';
+        const icone = notificacao.tipo === 'danger' ? 'fa-exclamation' : 'fa-clock';
+        item.innerHTML = `
+          <span class="notification-icon ${notificacao.tipo}">
+            <i class="fas ${icone}"></i>
+          </span>
+          <div class="notification-content">
+            <span class="notification-title">${notificacao.titulo}</span>
+            <span class="notification-time">${notificacao.tempo || ''}</span>
+          </div>
+        `;
+        Elements.notificationList.appendChild(item);
+      });
+    }
+
+    if (Elements.notificationBadge) {
+      Elements.notificationBadge.textContent = notificacoes.length;
+    }
+  }
+
+  function renderizarArmarios() {
+    if (!Elements.armariosContainer) {
+      return;
+    }
+
+    Elements.armariosContainer.innerHTML = '';
+    const filtroStatus = AppState.get('filtroAtual');
+    let armarios = filtrarArmariosPorPerfilEUnidade();
+
+    if (filtroStatus !== 'todos') {
+      armarios = armarios.filter((armario) => armario.status === filtroStatus);
+    }
+
+    armarios.forEach((armario) => {
+      const card = document.createElement('article');
+      card.className = `armario-card ${armario.status}`;
+      card.dataset.id = armario.id;
+      card.innerHTML = `
+        <header class="armario-header">
+          <span class="armario-number">${armario.numero}</span>
+          <span class="armario-status status-${armario.status}">${armario.status.replace('-', ' ')}</span>
+        </header>
+        <div class="armario-details">
+          <span><strong>Unidade:</strong> ${armario.unidade || '-'}</span>
+          ${armario.nomeVisitante ? `<span><strong>Responsável:</strong> ${armario.nomeVisitante}</span>` : ''}
+          ${armario.nomePaciente ? `<span><strong>Paciente:</strong> ${armario.nomePaciente}</span>` : ''}
+          ${armario.horaInicio ? `<span><strong>Início:</strong> ${armario.horaInicio}</span>` : ''}
+          ${armario.horaPrevista ? `<span><strong>Previsto:</strong> ${armario.horaPrevista}</span>` : ''}
+        </div>
+      `;
+
+      card.addEventListener('click', () => {
+        if (armario.termoAplicado) {
+          abrirModalTermo(armario.id);
+        }
+      });
+
+      Elements.armariosContainer.appendChild(card);
+    });
+  }
+
+  function abrirModalTermo(idArmario) {
+    termoArmarioAtual = idArmario;
+    const armario = AppState.get('armarios').find((item) => item.id === idArmario);
+    if (!armario) {
+      return;
+    }
+
+    if (Elements.termoArmario) {
+      Elements.termoArmario.textContent = armario.numero;
+    }
+
+    termoPassoAtual = 0;
+    atualizarWizard();
+    abrirModal(Elements.termoModal);
+  }
+
+  function atualizarWizard() {
+    const passos = Array.from(Elements.termoForm?.querySelectorAll('.wizard-step') || []);
+    passos.forEach((passo, indice) => passo.classList.toggle('active', indice === termoPassoAtual));
+
+    if (passos.length) {
+      const progresso = ((termoPassoAtual + 1) / passos.length) * 100;
+      if (Elements.termoProgress) {
+        Elements.termoProgress.style.width = `${progresso}%`;
+      }
+      if (Elements.termoProgressLabel) {
+        Elements.termoProgressLabel.textContent = `Passo ${termoPassoAtual + 1} de ${passos.length}`;
+      }
+      if (Elements.termoBtnVoltar) {
+        Elements.termoBtnVoltar.disabled = termoPassoAtual === 0;
+      }
+      if (Elements.termoBtnAvancar) {
+        Elements.termoBtnAvancar.textContent = termoPassoAtual === passos.length - 1 ? 'Aplicar termo' : 'Avançar';
+      }
+    }
+  }
+
+  function avancarWizard() {
+    const passos = Array.from(Elements.termoForm?.querySelectorAll('.wizard-step') || []);
+    if (!passos.length) {
+      return;
+    }
+
+    if (termoPassoAtual === passos.length - 1) {
+      Swal.fire('Termo aplicado', 'O termo foi registrado com sucesso.', 'success');
+      fecharModal(Elements.termoModal);
+      return;
+    }
+
+    termoPassoAtual += 1;
+    atualizarWizard();
+  }
+
+  function voltarWizard() {
+    if (termoPassoAtual === 0) {
+      return;
+    }
+
+    termoPassoAtual -= 1;
+    atualizarWizard();
+  }
+
+  function adicionarVolumeWizard() {
+    if (!Elements.termoVolumesList) {
+      return;
+    }
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'wizard-volume-grid';
+    wrapper.innerHTML = `
+      <div class="wizard-field">
+        <label>Quantidade</label>
+        <input class="wizard-input" type="number" min="1" value="1" />
+      </div>
+      <div class="wizard-field">
+        <label>Descrição</label>
+        <input class="wizard-input" type="text" placeholder="Ex.: Mala, sacola" />
+      </div>
+    `;
+    Elements.termoVolumesList.appendChild(wrapper);
+  }
+
+  function adicionarOrientacaoWizard() {
+    if (!Elements.termoOrientacoes) {
+      return;
+    }
+
+    const field = document.createElement('div');
+    field.className = 'wizard-field';
+    field.innerHTML = `
+      <label>Orientação</label>
+      <input class="wizard-input" type="text" placeholder="Descreva a orientação" />
+    `;
+    Elements.termoOrientacoes.appendChild(field);
+  }
+
+  function abrirModalArmario(tipo) {
+    if (!Elements.armarioForm) {
+      return;
+    }
+
+    Elements.armarioForm.reset();
+    Elements.armarioForm.dataset.tipo = tipo;
+    const horaPrevistaGroup = document.getElementById('hora-prevista-group');
+    if (horaPrevistaGroup) {
+      horaPrevistaGroup.style.display = tipo === 'visitante' ? 'flex' : 'none';
+    }
+    abrirModal(Elements.armarioModal);
+  }
+
+  function salvarArmario() {
+    const dados = new FormData(Elements.armarioForm);
+    const tipo = Elements.armarioForm.dataset.tipo || 'visitante';
+    const armarios = AppState.get('armarios');
+    const novoId = armarios.length ? Math.max(...armarios.map((armario) => armario.id)) + 1 : 1;
+
+    armarios.push({
+      id: novoId,
+      numero: `TEMP-${String(novoId).padStart(3, '0')}`,
+      status: 'em-uso',
+      tipo,
+      unidade: AppState.get('unidadeAtual') === 'todas' ? 'NAC Eletiva' : AppState.get('unidadeAtual'),
+      nomeVisitante: dados.get('nomeVisitante'),
+      nomePaciente: dados.get('nomePaciente'),
+      leito: dados.get('leito'),
+      volumes: Number(dados.get('volumes')) || 0,
+      horaInicio: new Date().toLocaleTimeString('pt-BR'),
+      horaPrevista: tipo === 'visitante' ? dados.get('horaPrevista') : undefined,
+      termoAplicado: false
+    });
+
+    AppState.set('armarios', armarios);
+    fecharModal(Elements.armarioModal);
+    atualizarInterface();
+    carregarDadosTabelas();
+  }
+
+  function salvarUsuario() {
+    const dados = new FormData(Elements.usuarioForm);
+    const usuarios = AppState.get('usuarios');
+    const novoId = usuarios.length ? Math.max(...usuarios.map((usuario) => usuario.id)) + 1 : 1;
+
+    usuarios.push({
+      id: novoId,
+      nome: dados.get('nome'),
+      email: dados.get('email'),
+      perfil: dados.get('perfil'),
+      acessoVisitantes: document.getElementById('acesso-visitantes').checked,
+      acessoAcompanhantes: document.getElementById('acesso-acompanhantes').checked
+    });
+
+    AppState.set('usuarios', usuarios);
+    fecharModal(Elements.usuarioModal);
+    carregarDadosTabelas();
+  }
+
+  function salvarMovimentacao() {
+    if (!movimentacaoArmarioAtual) {
+      return;
+    }
+
+    const dados = new FormData(Elements.movimentacaoForm);
+    const registro = {
+      tipo: dados.get('mov-tipo'),
+      descricao: dados.get('mov-descricao'),
+      responsavel: dados.get('mov-responsavel'),
+      data: dados.get('mov-data'),
+      hora: dados.get('mov-hora')
+    };
+
+    const movimentacoes = AppState.get('movimentacoes');
+    movimentacoes[movimentacaoArmarioAtual] = movimentacoes[movimentacaoArmarioAtual] || [];
+    movimentacoes[movimentacaoArmarioAtual].push(registro);
+    AppState.set('movimentacoes', movimentacoes);
+    Elements.movimentacaoForm.reset();
+    renderizarMovimentacoes();
+  }
+
+  const MAX_ARMARIOS_POR_LOTE = 500;
+
+  function gerarNumerosParaCadastro(config, existentes) {
+    const metodo = config.metodo;
+    const prefixo = (config.prefixo || '').trim();
+    const separador = config.separador !== undefined && config.separador !== null ? String(config.separador) : '-';
+    const zeroPad = Math.max(0, Number.isNaN(Number(config.zeroPad)) ? 0 : Number(config.zeroPad));
+    const existentesSet = new Set((existentes || []).filter(Boolean));
+    const novos = [];
+    const novosSet = new Set();
+
+    const formatarNumero = (valor) => {
+      if (metodo === 'unico' && config.numero) {
+        return config.numero.trim();
+      }
+
+      if (typeof valor === 'number' && Number.isFinite(valor)) {
+        const numeroNumerico = Number(valor);
+        const sinal = numeroNumerico < 0 ? '-' : '';
+        const baseNumerica = zeroPad > 0
+          ? `${sinal}${String(Math.abs(numeroNumerico)).padStart(zeroPad, '0')}`
+          : String(numeroNumerico);
+        if (prefixo) {
+          return `${prefixo}${separador ? separador : ''}${baseNumerica}`;
+        }
+        return baseNumerica;
+      }
+
+      const texto = String(valor).trim();
+      if (prefixo) {
+        return `${prefixo}${separador ? separador : ''}${texto}`;
+      }
+      return texto;
+    };
+
+    const registrar = (numero) => {
+      if (!numero) {
+        throw new Error('Número de armário inválido.');
+      }
+      if (existentesSet.has(numero) || novosSet.has(numero)) {
+        throw new Error('Não foi possível gerar numeração sem conflitos. Ajuste o prefixo, número ou intervalo informado.');
+      }
+      novosSet.add(numero);
+      novos.push(numero);
+    };
+
+    if (metodo === 'unico') {
+      const numero = (config.numero || '').trim();
+      if (!numero) {
+        throw new Error('Informe o número do armário que deseja cadastrar.');
+      }
+      registrar(numero);
+      return novos;
+    }
+
+    if (metodo === 'sequencia') {
+      const quantidade = Number(config.quantidade);
+      const inicio = Number(config.sequenciaInicial);
+      if (!Number.isInteger(quantidade) || quantidade <= 0) {
+        throw new Error('Informe uma quantidade válida de armários.');
+      }
+      if (quantidade > MAX_ARMARIOS_POR_LOTE) {
+        throw new Error(`Cadastre no máximo ${MAX_ARMARIOS_POR_LOTE} armários por vez.`);
+      }
+      if (!Number.isInteger(inicio) || inicio <= 0) {
+        throw new Error('Informe um número inicial válido para a sequência.');
+      }
+      for (let i = 0; i < quantidade; i += 1) {
+        registrar(formatarNumero(inicio + i));
+      }
+      return novos;
+    }
+
+    if (metodo === 'intervalo') {
+      const inicio = Number(config.intervaloInicio);
+      const fim = Number(config.intervaloFim);
+      if (!Number.isInteger(inicio) || !Number.isInteger(fim)) {
+        throw new Error('Informe números válidos para o intervalo.');
+      }
+      if (fim < inicio) {
+        throw new Error('O final do intervalo deve ser maior ou igual ao início.');
+      }
+      const total = fim - inicio + 1;
+      if (total > MAX_ARMARIOS_POR_LOTE) {
+        throw new Error(`Cadastre no máximo ${MAX_ARMARIOS_POR_LOTE} armários por vez.`);
+      }
+      for (let valor = inicio; valor <= fim; valor += 1) {
+        registrar(formatarNumero(valor));
+      }
+      return novos;
+    }
+
+    throw new Error('Método de cadastro de armários inválido.');
+  }
+
+  function abrirModalCadastroArmarioFisico() {
+    Swal.fire({
+      title: 'Cadastro de armários físicos',
+      html: `
+        <div class="swal-form-grid">
+          <div class="swal-form-section">
+            <div class="swal-form-section-title"><i class="fas fa-archive"></i> Informações gerais</div>
+            <div class="swal-form-fields two-columns">
+              <div class="swal-form-group">
+                <label for="cadastro-tipo">Tipo</label>
+                <select id="cadastro-tipo" class="swal2-select">
+                  <option value="visitante" selected>Visitante</option>
+                  <option value="acompanhante">Acompanhante</option>
+                </select>
+              </div>
+              <div class="swal-form-group">
+                <label for="cadastro-unidade">Unidade</label>
+                <input id="cadastro-unidade" class="swal2-input" placeholder="Ex.: NAC Eletiva" value="" />
+              </div>
+              <div class="swal-form-group">
+                <label for="cadastro-localizacao">Localização</label>
+                <input id="cadastro-localizacao" class="swal2-input" placeholder="Ex.: Bloco A" value="" />
+              </div>
+              <div class="swal-form-group">
+                <label for="cadastro-prefixo">Prefixo (opcional)</label>
+                <input id="cadastro-prefixo" class="swal2-input" placeholder="Ex.: V ou A" />
+              </div>
+              <div class="swal-form-group">
+                <label for="cadastro-separador">Separador</label>
+                <input id="cadastro-separador" class="swal2-input" value="-" maxlength="2" />
+              </div>
+              <div class="swal-form-group">
+                <label for="cadastro-zero-pad">Zeros à esquerda</label>
+                <input id="cadastro-zero-pad" class="swal2-input" type="number" min="0" max="6" step="1" value="2" />
+              </div>
+            </div>
+          </div>
+          <div class="swal-form-section">
+            <div class="swal-form-section-title"><i class="fas fa-hashtag"></i> Numeração dos armários</div>
+            <div class="swal-form-fields">
+              <div class="swal-form-group">
+                <label for="cadastro-metodo">Método de numeração</label>
+                <select id="cadastro-metodo" class="swal2-select">
+                  <option value="unico">Número único</option>
+                  <option value="sequencia" selected>Sequência automática</option>
+                  <option value="intervalo">Intervalo numérico</option>
+                </select>
+              </div>
+              <div class="swal-methods-container">
+                <div class="swal-method" data-method="unico">
+                  <div class="swal-form-subtitle">Cadastro individual</div>
+                  <div class="swal-form-subgrid">
+                    <div class="swal-form-group">
+                      <label for="cadastro-numero">Número do armário</label>
+                      <input id="cadastro-numero" class="swal2-input" placeholder="Ex.: V-01" />
+                    </div>
+                  </div>
+                  <p class="swal-form-note">Utilize quando deseja cadastrar apenas um armário específico.</p>
+                </div>
+                <div class="swal-method" data-method="sequencia">
+                  <div class="swal-form-subtitle">Sequência automática</div>
+                  <div class="swal-form-subgrid">
+                    <div class="swal-form-group">
+                      <label for="cadastro-quantidade">Quantidade</label>
+                      <input id="cadastro-quantidade" class="swal2-input" type="number" min="1" value="1" />
+                    </div>
+                    <div class="swal-form-group">
+                      <label for="cadastro-inicio">Início da sequência</label>
+                      <input id="cadastro-inicio" class="swal2-input" type="number" min="1" value="1" />
+                    </div>
+                  </div>
+                  <p class="swal-form-note">Gera uma sequência contínua partindo do número informado.</p>
+                </div>
+                <div class="swal-method" data-method="intervalo">
+                  <div class="swal-form-subtitle">Intervalo numérico</div>
+                  <div class="swal-form-subgrid">
+                    <div class="swal-form-group">
+                      <label for="cadastro-intervalo-inicio">Início do intervalo</label>
+                      <input id="cadastro-intervalo-inicio" class="swal2-input" type="number" min="0" value="1" />
+                    </div>
+                    <div class="swal-form-group">
+                      <label for="cadastro-intervalo-fim">Fim do intervalo</label>
+                      <input id="cadastro-intervalo-fim" class="swal2-input" type="number" min="0" value="10" />
+                    </div>
+                  </div>
+                  <p class="swal-form-note">Ideal para cadastrar armários quando você já sabe o intervalo completo.</p>
+                </div>
+              </div>
+              <div class="swal-form-preview">
+                <div class="swal-form-preview__header">
+                  <i class="fas fa-eye"></i>
+                  <span>Pré-visualização da numeração</span>
+                </div>
+                <div class="swal-form-preview__value" id="cadastro-preview-valor">—</div>
+                <div class="swal-form-preview__hint" id="cadastro-preview-hint">Preencha os campos para ver um exemplo dos armários que serão gerados.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `,
+      confirmButtonText: 'Cadastrar',
+      showCancelButton: true,
+      focusConfirm: false,
+      allowOutsideClick: () => !Swal.isLoading(),
+      didOpen: () => {
+        const popup = Swal.getPopup();
+        if (!popup) {
+          return;
+        }
+
+        const metodoSelect = popup.querySelector('#cadastro-metodo');
+        const methodSections = popup.querySelectorAll('.swal-method');
+        const previewContainer = popup.querySelector('.swal-form-preview');
+        const previewValue = popup.querySelector('#cadastro-preview-valor');
+        const previewHint = popup.querySelector('#cadastro-preview-hint');
+
+        if (!metodoSelect) {
+          return;
+        }
+
+        const atualizarVisibilidade = () => {
+          const metodoAtual = metodoSelect.value;
+          methodSections.forEach((elemento) => {
+            const ativo = elemento.getAttribute('data-method') === metodoAtual;
+            elemento.style.display = ativo ? 'block' : 'none';
+            elemento.setAttribute('aria-hidden', ativo ? 'false' : 'true');
+          });
+        };
+
+        const coletarPayloadPreview = () => {
+          const zeroPadInput = Number(popup.querySelector('#cadastro-zero-pad')?.value ?? 0);
+          const payload = {
+            metodo: metodoSelect.value,
+            tipo: popup.querySelector('#cadastro-tipo')?.value || 'visitante',
+            unidade: popup.querySelector('#cadastro-unidade')?.value.trim() || '',
+            localizacao: popup.querySelector('#cadastro-localizacao')?.value.trim() || '',
+            prefixo: popup.querySelector('#cadastro-prefixo')?.value.trim() || '',
+            separador: popup.querySelector('#cadastro-separador')?.value ?? '-',
+            zeroPad: Math.max(0, Math.min(6, Number.isNaN(zeroPadInput) ? 0 : zeroPadInput))
+          };
+
+          if (payload.metodo === 'unico') {
+            payload.numero = popup.querySelector('#cadastro-numero')?.value.trim() || '';
+          }
+          if (payload.metodo === 'sequencia') {
+            payload.quantidade = Number(popup.querySelector('#cadastro-quantidade')?.value ?? 0);
+            payload.sequenciaInicial = Number(popup.querySelector('#cadastro-inicio')?.value ?? 1);
+          }
+          if (payload.metodo === 'intervalo') {
+            payload.intervaloInicio = Number(popup.querySelector('#cadastro-intervalo-inicio')?.value ?? 0);
+            payload.intervaloFim = Number(popup.querySelector('#cadastro-intervalo-fim')?.value ?? 0);
+          }
+
+          return payload;
+        };
+
+        const atualizarPreview = () => {
+          if (!previewValue || !previewHint) {
+            return;
+          }
+
+          try {
+            const numeros = gerarNumerosParaCadastro(coletarPayloadPreview(), []);
+            if (!numeros.length) {
+              previewValue.textContent = '—';
+              previewHint.textContent = 'Preencha os campos para ver um exemplo dos armários que serão gerados.';
+              previewHint.classList.remove('is-error');
+              previewContainer?.classList.remove('is-error');
+              return;
+            }
+
+            const limite = numeros.length > 5 ? `${numeros.slice(0, 5).join(', ')}…` : numeros.join(', ');
+            previewValue.textContent = limite;
+            previewHint.textContent = numeros.length === 1
+              ? 'Será cadastrado 1 armário.'
+              : `Serão cadastrados ${numeros.length} armários.`;
+            previewHint.classList.remove('is-error');
+            previewContainer?.classList.remove('is-error');
+          } catch (error) {
+            previewValue.textContent = '—';
+            previewHint.textContent = error instanceof Error ? error.message : 'Revise os dados informados.';
+            previewHint.classList.add('is-error');
+            previewContainer?.classList.add('is-error');
+          }
+        };
+
+        metodoSelect.addEventListener('change', () => {
+          atualizarVisibilidade();
+          atualizarPreview();
+        });
+
+        const camposParaMonitorar = popup.querySelectorAll(
+          '#cadastro-tipo, #cadastro-unidade, #cadastro-localizacao, #cadastro-prefixo, #cadastro-separador, #cadastro-zero-pad, #cadastro-numero, #cadastro-quantidade, #cadastro-inicio, #cadastro-intervalo-inicio, #cadastro-intervalo-fim'
+        );
+
+        camposParaMonitorar.forEach((campo) => {
+          campo.addEventListener('input', atualizarPreview);
+          campo.addEventListener('change', atualizarPreview);
+        });
+
+        atualizarVisibilidade();
+        atualizarPreview();
+      },
+      preConfirm: () => {
+        const metodo = document.getElementById('cadastro-metodo').value;
+        const tipo = document.getElementById('cadastro-tipo').value;
+        const unidade = document.getElementById('cadastro-unidade').value.trim();
+        const localizacao = document.getElementById('cadastro-localizacao').value.trim();
+        const prefixo = document.getElementById('cadastro-prefixo').value.trim();
+        const separador = document.getElementById('cadastro-separador').value;
+        const zeroPad = Number(document.getElementById('cadastro-zero-pad').value || 0);
+
+        const payload = {
+          metodo,
+          tipo,
+          unidade,
+          localizacao,
+          prefixo,
+          separador,
+          zeroPad: Math.max(0, Math.min(6, Number.isNaN(zeroPad) ? 0 : zeroPad))
+        };
+
+        if (metodo === 'unico') {
+          const numero = document.getElementById('cadastro-numero').value.trim();
+          if (!numero) {
+            Swal.showValidationMessage('Informe o número do armário que deseja cadastrar.');
+            return false;
+          }
+          payload.numero = numero;
+        }
+
+        if (metodo === 'sequencia') {
+          const quantidade = Number(document.getElementById('cadastro-quantidade').value || 0);
+          const inicio = Number(document.getElementById('cadastro-inicio').value || 1);
+          if (!Number.isInteger(quantidade) || quantidade <= 0) {
+            Swal.showValidationMessage('Informe uma quantidade válida de armários.');
+            return false;
+          }
+          if (quantidade > MAX_ARMARIOS_POR_LOTE) {
+            Swal.showValidationMessage(`Cadastre no máximo ${MAX_ARMARIOS_POR_LOTE} armários por vez.`);
+            return false;
+          }
+          if (!Number.isInteger(inicio) || inicio <= 0) {
+            Swal.showValidationMessage('Informe um número inicial válido para a sequência.');
+            return false;
+          }
+          payload.quantidade = quantidade;
+          payload.sequenciaInicial = inicio;
+        }
+
+        if (metodo === 'intervalo') {
+          const inicioIntervalo = Number(document.getElementById('cadastro-intervalo-inicio').value);
+          const fimIntervalo = Number(document.getElementById('cadastro-intervalo-fim').value);
+          if (!Number.isInteger(inicioIntervalo) || !Number.isInteger(fimIntervalo)) {
+            Swal.showValidationMessage('Informe números válidos para o intervalo.');
+            return false;
+          }
+          if (fimIntervalo < inicioIntervalo) {
+            Swal.showValidationMessage('O final do intervalo deve ser maior ou igual ao início.');
+            return false;
+          }
+          if (fimIntervalo - inicioIntervalo + 1 > MAX_ARMARIOS_POR_LOTE) {
+            Swal.showValidationMessage(`Cadastre no máximo ${MAX_ARMARIOS_POR_LOTE} armários por vez.`);
+            return false;
+          }
+          payload.intervaloInicio = inicioIntervalo;
+          payload.intervaloFim = fimIntervalo;
+        }
+
+        if (!hasAppsScript) {
+          return { payload };
+        }
+
+        Swal.showLoading();
+        return new Promise((resolve) => {
+          google.script.run
+            .withSuccessHandler((resposta) => {
+              if (!resposta || !resposta.success) {
+                Swal.showValidationMessage((resposta && resposta.error) || 'Não foi possível cadastrar os armários informados.');
+                resolve(false);
+                return;
+              }
+              resolve({ payload, resposta });
+            })
+            .withFailureHandler((erro) => {
+              console.error('Erro ao cadastrar armário físico', erro);
+              Swal.showValidationMessage('Erro ao cadastrar armários. Tente novamente.');
+              resolve(false);
+            })
+            .cadastrarArmarioFisico(payload);
+        });
+      }
+    }).then(async (resultado) => {
+      if (!resultado.isConfirmed || !resultado.value) {
+        return;
+      }
+
+      if (resultado.value.resposta && hasAppsScript) {
+        try {
+          const cadastroAtualizado = await ApiClient.call('getCadastroArmarios');
+          if (cadastroAtualizado && cadastroAtualizado.success) {
+            AppState.set('cadastroArmarios', cadastroAtualizado.data || []);
+            carregarDadosTabelas();
+          }
+        } catch (error) {
+          console.error('Erro ao atualizar cadastros de armários', error);
+        }
+
+        const numeros = resultado.value.resposta.numeros || [];
+        if (numeros.length) {
+          Swal.fire('Armários cadastrados', `Armários cadastrados: ${numeros.join(', ')}`, 'success');
+        } else {
+          Swal.fire('Armários cadastrados', 'Cadastro realizado com sucesso.', 'success');
+        }
+        return;
+      }
+
+      if (resultado.value.payload && !hasAppsScript) {
+        try {
+          const cadastro = AppState.get('cadastroArmarios');
+          const existentes = cadastro.map((item) => item.numero);
+          const numeros = gerarNumerosParaCadastro(resultado.value.payload, existentes);
+          const ultimoId = cadastro.length ? Math.max(...cadastro.map((item) => item.id)) : 0;
+          numeros.forEach((numero, index) => {
+            cadastro.push({
+              id: ultimoId + index + 1,
+              numero,
+              tipo: resultado.value.payload.tipo,
+              unidade: resultado.value.payload.unidade || 'NAC Eletiva',
+              localizacao: resultado.value.payload.localizacao || 'Não informado',
+              status: 'ativo'
+            });
+          });
+          AppState.set('cadastroArmarios', cadastro);
+          carregarDadosTabelas();
+          Swal.fire('Armários cadastrados', `Armários cadastrados: ${numeros.join(', ')}`, 'success');
+        } catch (error) {
+          Swal.fire('Erro', error.message || 'Não foi possível cadastrar os armários.', 'error');
+        }
+      }
+    });
+  }
+
+  function cadastrarNovaUnidade() {
+    Swal.fire({
+      title: 'Nova unidade',
+      input: 'text',
+      inputLabel: 'Nome da unidade',
+      showCancelButton: true,
+      confirmButtonText: 'Salvar'
+    }).then((resultado) => {
+      if (!resultado.isConfirmed || !resultado.value) {
+        return;
+      }
+
+      const unidades = AppState.get('unidades');
+      const novoId = unidades.length ? Math.max(...unidades.map((item) => item.id)) + 1 : 1;
+      unidades.push({ id: novoId, nome: resultado.value.trim(), status: 'ativa' });
+      AppState.set('unidades', unidades);
+      atualizarSeletoresUnidade();
+      carregarDadosTabelas();
+    });
+  }
+
+  function tratarAcoesTabelaVisitantes(event) {
+    const linha = event.target.closest('tr');
+    if (!linha) {
+      return;
+    }
+    const id = Number(linha.dataset.id);
+    if (event.target.closest('[data-action="liberar"]')) {
+      abrirModalLiberacao(id, 'visitante');
+    }
+    if (event.target.closest('[data-action="termo"]')) {
+      abrirModalTermo(id);
+    }
+  }
+
+  function tratarAcoesTabelaAcompanhantes(event) {
+    const linha = event.target.closest('tr');
+    if (!linha) {
+      return;
+    }
+    const id = Number(linha.dataset.id);
+    if (event.target.closest('[data-action="liberar"]')) {
+      abrirModalLiberacao(id, 'acompanhante');
+    }
+    if (event.target.closest('[data-action="termo"]')) {
+      abrirModalTermo(id);
+    }
+  }
+
+  function tratarAcoesUsuarios(event) {
+    if (event.target.closest('[data-action="remover"]')) {
+      const linha = event.target.closest('tr');
+      const id = Number(linha.dataset.id);
+      const usuarios = AppState.get('usuarios').filter((usuario) => usuario.id !== id);
+      AppState.set('usuarios', usuarios);
+      carregarDadosTabelas();
+    }
+  }
+
+  function tratarAcoesCadastroArmarios(event) {
+    if (event.target.closest('[data-action="remover"]')) {
+      const linha = event.target.closest('tr');
+      const id = Number(linha.dataset.id);
+      const cadastro = AppState.get('cadastroArmarios').filter((item) => item.id !== id);
+      AppState.set('cadastroArmarios', cadastro);
+      carregarDadosTabelas();
+    }
+  }
+
+  function tratarAcaoTermo(event) {
+    const linha = event.target.closest('tr');
+    if (!linha) {
+      return;
+    }
+    const id = Number(linha.dataset.id);
+    if (event.target.closest('[data-action="movimentacoes"]')) {
+      abrirModalMovimentacao(id);
+    }
+    if (event.target.closest('[data-action="encerrar"]')) {
+      abrirModalLiberacao(id, 'acompanhante');
+    }
+  }
+
+  function tratarAcaoUnidade(event) {
+    if (!event.target.closest('[data-action="desativar"]')) {
+      return;
+    }
+
+    const linha = event.target.closest('tr');
+    const id = Number(linha.dataset.id);
+    const unidades = AppState.get('unidades').map((unidade) =>
+      unidade.id === id ? { ...unidade, status: unidade.status === 'ativa' ? 'inativa' : 'ativa' } : unidade
+    );
+    AppState.set('unidades', unidades);
+    carregarDadosTabelas();
+    atualizarSeletoresUnidade();
+  }
+
+  function abrirModalMovimentacao(idArmario) {
+    movimentacaoArmarioAtual = idArmario;
+    Elements.movimentacaoForm?.reset();
+    abrirModal(Elements.movimentacaoModal);
+    renderizarMovimentacoes();
+  }
+
+  function renderizarMovimentacoes() {
+    if (!Elements.movimentacoesList) {
+      return;
+    }
+
+    const movimentos = AppState.get('movimentacoes')[movimentacaoArmarioAtual] || [];
+    Elements.movimentacoesList.innerHTML = '';
+
+    if (movimentos.length === 0) {
+      Elements.movimentacoesList.innerHTML = '<p class="text-muted">Nenhuma movimentação registrada.</p>';
+      return;
+    }
+
+    movimentos.forEach((movimento) => {
+      const item = document.createElement('div');
+      item.className = 'movimentacao-item';
+      item.innerHTML = `
+        <div class="movimentacao-header">
+          <span>${movimento.tipo.toUpperCase()}</span>
+          <span>${movimento.data} ${movimento.hora}</span>
+        </div>
+        <div class="movimentacao-meta">
+          <span>${movimento.descricao}</span>
+          <span>Responsável: ${movimento.responsavel}</span>
+        </div>
+      `;
+      Elements.movimentacoesList.appendChild(item);
+    });
+  }
+
+  function abrirModalLiberacao(idArmario, tipo) {
+    liberacaoArmarioAtual = { id: idArmario, tipo };
+    const armario = AppState.get('armarios').find((item) => item.id === idArmario);
+    if (!armario) {
+      return;
+    }
+
+    Elements.liberacaoArmario.textContent = armario.numero;
+    Elements.liberacaoData.textContent = new Date().toLocaleString('pt-BR');
+    Elements.liberacaoDetalhes.textContent = `Paciente: ${armario.nomePaciente || '-'} | Responsável: ${armario.nomeVisitante || '-'}`;
+    Elements.liberacaoSlider.value = 0;
+    Elements.liberacaoCheckbox.checked = false;
+    Elements.cpfConfirmacao.value = '';
+    limparAssinatura();
+    alternarMetodoLiberacao();
+    abrirModal(Elements.liberacaoModal);
+  }
+
+  function fecharModalLiberacao() {
+    fecharModal(Elements.liberacaoModal);
+    liberacaoArmarioAtual = null;
+  }
+
+  function confirmarLiberacao() {
+    if (!liberacaoArmarioAtual) {
+      return;
+    }
+
+    const armarios = AppState.get('armarios').map((armario) => {
+      if (armario.id === liberacaoArmarioAtual.id) {
+        return {
+          ...armario,
+          status: 'livre',
+          nomeVisitante: '',
+          nomePaciente: '',
+          leito: '',
+          volumes: 0,
+          termoAplicado: false
+        };
+      }
+      return armario;
+    });
+
+    AppState.set('armarios', armarios);
+    fecharModalLiberacao();
+    atualizarInterface();
+    carregarDadosTabelas();
+  }
+
+  function carregarDadosTabelas() {
+    preencherTabelaArmarios('visitante', Elements.tabelaVisitantesBody);
+    preencherTabelaArmarios('acompanhante', Elements.tabelaAcompanhantesBody);
+    preencherTabelaHistorico(Elements.tabelaHistoricoVisitantesBody, 'visitante');
+    preencherTabelaHistorico(Elements.tabelaHistoricoAcompanhantesBody, 'acompanhante');
+    preencherTabelaCadastros();
+    preencherTabelaUnidades();
+    preencherTabelaUsuarios();
+    preencherTabelaLogs();
+    preencherTabelaTermos();
+  }
+
+  function preencherTabelaArmarios(tipo, tbody) {
+    if (!tbody) {
+      return;
+    }
+
+    const armarios = (AppState.get('armarios') || []).filter((armario) => armario.tipo === tipo);
+    tbody.innerHTML = armarios
+      .map(
+        (armario) => `
+          <tr data-id="${armario.id}">
+            <td>${armario.numero}</td>
+            <td>${armario.unidade || '-'}</td>
+            <td>${armario.status}</td>
+            <td>${armario.nomeVisitante || '-'}</td>
+            <td>${armario.nomePaciente || '-'}</td>
+            <td>${armario.leito || '-'}</td>
+            <td>${armario.volumes || '-'}</td>
+            <td>${armario.horaInicio || '-'}</td>
+            ${tipo === 'visitante' ? `<td>${armario.horaPrevista || '-'}</td>` : ''}
+            <td>
+              <button class="btn btn-secondary" data-action="liberar" type="button">Liberar</button>
+              <button class="btn btn-primary" data-action="termo" type="button">Termo</button>
+            </td>
+          </tr>
+        `
+      )
+      .join('');
+  }
+
+  function preencherTabelaHistorico(tbody, tipo) {
+    if (!tbody) {
+      return;
+    }
+
+    const historico = AppState.get('historico') || [];
+    const filtrado = historico.filter((registro) =>
+      tipo === 'visitante' ? Boolean(registro.visitante) : Boolean(registro.acompanhante)
+    );
+
+    tbody.innerHTML = filtrado
+      .map(
+        (item) => `
+          <tr>
+            <td>${item.data}</td>
+            <td>${item.armario}</td>
+            <td>${item.visitante || item.acompanhante || '-'}</td>
+            <td>${item.paciente || '-'}</td>
+            <td>${item.leito || '-'}</td>
+            <td>${item.volumes || '-'}</td>
+            <td>${item.horaInicio || '-'}</td>
+            <td>${item.horaFim || '-'}</td>
+            <td>${item.status || '-'}</td>
+          </tr>
+        `
+      )
+      .join('');
+  }
+
+  function preencherTabelaCadastros() {
+    if (!Elements.tabelaCadastroArmariosBody) {
+      return;
+    }
+
+    const cadastro = AppState.get('cadastroArmarios') || [];
+    Elements.tabelaCadastroArmariosBody.innerHTML = cadastro
+      .map(
+        (item) => `
+          <tr data-id="${item.id}">
+            <td>${item.id}</td>
+            <td>${item.numero}</td>
+            <td>${item.tipo}</td>
+            <td>${item.unidade}</td>
+            <td>${item.localizacao}</td>
+            <td>${item.status}</td>
+            <td><button class="btn btn-danger" data-action="remover" type="button">Remover</button></td>
+          </tr>
+        `
+      )
+      .join('');
+  }
+
+  function preencherTabelaUnidades() {
+    if (!Elements.tabelaUnidadesBody) {
+      return;
+    }
+
+    const unidades = AppState.get('unidades') || [];
+    Elements.tabelaUnidadesBody.innerHTML = unidades
+      .map(
+        (unidade) => `
+          <tr data-id="${unidade.id}">
+            <td>${unidade.id}</td>
+            <td>${unidade.nome}</td>
+            <td>${unidade.status}</td>
+            <td>—</td>
+            <td><button class="btn btn-secondary" data-action="desativar" type="button">Alternar status</button></td>
+          </tr>
+        `
+      )
+      .join('');
+  }
+
+  function preencherTabelaUsuarios() {
+    if (!Elements.tabelaUsuariosBody) {
+      return;
+    }
+
+    const usuarios = AppState.get('usuarios') || [];
+    Elements.tabelaUsuariosBody.innerHTML = usuarios
+      .map(
+        (usuario) => `
+          <tr data-id="${usuario.id}">
+            <td>${usuario.id}</td>
+            <td>${usuario.nome}</td>
+            <td>${usuario.email}</td>
+            <td>${usuario.perfil}</td>
+            <td>${usuario.acessoVisitantes ? 'Sim' : 'Não'}</td>
+            <td>${usuario.acessoAcompanhantes ? 'Sim' : 'Não'}</td>
+            <td><button class="btn btn-danger" data-action="remover" type="button">Remover</button></td>
+          </tr>
+        `
+      )
+      .join('');
+  }
+
+  function preencherTabelaLogs() {
+    if (!Elements.tabelaLogsBody) {
+      return;
+    }
+
+    const logs = AppState.get('logs') || [];
+    Elements.tabelaLogsBody.innerHTML = logs
+      .map(
+        (log) => `
+          <tr>
+            <td>${log.dataHora}</td>
+            <td>${log.usuario}</td>
+            <td>${log.acao}</td>
+            <td>${log.detalhes}</td>
+          </tr>
+        `
+      )
+      .join('');
+  }
+
+  function preencherTabelaTermos() {
+    if (!Elements.tabelaTermosBody) {
+      return;
+    }
+
+    const armarios = (AppState.get('armarios') || []).filter((armario) => armario.termoAplicado);
+    const termos = AppState.get('termos');
+    Elements.tabelaTermosBody.innerHTML = armarios
+      .map(
+        (armario) => `
+          <tr data-id="${armario.id}">
+            <td>${armario.numero}</td>
+            <td>${armario.nomeVisitante || '-'}</td>
+            <td>${armario.nomePaciente || '-'}</td>
+            <td>${termos[armario.id]?.aplicadoEm || '-'}</td>
+            <td><button class="btn btn-secondary" data-action="movimentacoes" type="button">Movimentações</button></td>
+            <td><button class="btn btn-primary" data-action="encerrar" type="button">Encerrar</button></td>
+          </tr>
+        `
+      )
+      .join('');
+  }
+
+  const App = (() => {
+    async function init() {
+      cacheElements();
+      bindNavigation();
+      bindFilters();
+      bindSelectors();
+      bindNotifications();
+      bindTables();
+      bindModals();
+      bindForms();
+
+      const remoto = await ApiClient.bootstrap();
+      const fallback = MockBackend.bootstrap();
+
+      AppState.patch({
+        unidades: remoto.unidades && remoto.unidades.length ? remoto.unidades : fallback.unidades,
+        armarios: remoto.armarios && remoto.armarios.length ? remoto.armarios : fallback.armarios,
+        termos: Object.keys(remoto.termos || {}).length ? remoto.termos : fallback.termos,
+        movimentacoes: Object.keys(remoto.movimentacoes || {}).length ? remoto.movimentacoes : fallback.movimentacoes,
+        historico: remoto.historico && remoto.historico.length ? remoto.historico : fallback.historico,
+        usuarios: remoto.usuarios && remoto.usuarios.length ? remoto.usuarios : fallback.usuarios,
+        logs: remoto.logs && remoto.logs.length ? remoto.logs : fallback.logs,
+        cadastroArmarios: remoto.cadastroArmarios && remoto.cadastroArmarios.length ? remoto.cadastroArmarios : fallback.cadastroArmarios,
+        notificacoes: remoto.notificacoes && remoto.notificacoes.length ? remoto.notificacoes : fallback.notificacoes
+      });
+
+      atualizarInterface();
+      carregarDadosTabelas();
+      alternarMetodoLiberacao();
+      navegarParaPagina(AppState.get('paginaAtual'));
+    }
+
+    return { init };
+  })();
+
+  document.addEventListener('DOMContentLoaded', App.init);
+})();
+
+</script>
