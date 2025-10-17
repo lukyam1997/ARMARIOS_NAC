@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sistema de Armários Hospitalares</title>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+      integrity="sha512-papNM5Y5G9m1sGU16K2NKY0hYp+u+6w35vj0IadB1iKsFcEYbyaKOA1NV1QMcZV8K4K4WfQ5CElxM2x0O3qsNQ=="
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    />
+    <?!= include('style'); ?>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Menu principal">
+  <div class="sidebar__header">
+    <h1 class="sidebar__title">Controle de Armários</h1>
+    <p class="sidebar__description">Hospital Central</p>
+  </div>
+  <nav class="sidebar__nav" aria-label="Navegação do sistema">
+    <ul class="sidebar__list">
+      <li class="sidebar__item">
+        <a class="sidebar__link sidebar__link--active" data-page="dashboard" href="#">
+          <span class="sidebar__icon"><i class="fas fa-tachometer-alt" aria-hidden="true"></i></span>
+          <span class="sidebar__label">Dashboard</span>
+        </a>
+      </li>
+      <li class="sidebar__item">
+        <a class="sidebar__link" data-page="visitantes" href="#">
+          <span class="sidebar__icon"><i class="fas fa-user-clock" aria-hidden="true"></i></span>
+          <span class="sidebar__label">Visitantes</span>
+        </a>
+      </li>
+      <li class="sidebar__item">
+        <a class="sidebar__link" data-page="acompanhantes" href="#">
+          <span class="sidebar__icon"><i class="fas fa-user-friends" aria-hidden="true"></i></span>
+          <span class="sidebar__label">Acompanhantes</span>
+        </a>
+      </li>
+      <li class="sidebar__item">
+        <a class="sidebar__link" data-page="historico-visitantes" href="#">
+          <span class="sidebar__icon"><i class="fas fa-history" aria-hidden="true"></i></span>
+          <span class="sidebar__label">Histórico Visitantes</span>
+        </a>
+      </li>
+      <li class="sidebar__item">
+        <a class="sidebar__link" data-page="historico-acompanhantes" href="#">
+          <span class="sidebar__icon"><i class="fas fa-history" aria-hidden="true"></i></span>
+          <span class="sidebar__label">Histórico Acompanhantes</span>
+        </a>
+      </li>
+      <li class="sidebar__item">
+        <a class="sidebar__link" data-page="termo-responsabilidade" href="#">
+          <span class="sidebar__icon"><i class="fas fa-file-signature" aria-hidden="true"></i></span>
+          <span class="sidebar__label">Termo de Responsabilidade</span>
+        </a>
+      </li>
+      <li class="sidebar__item">
+        <a class="sidebar__link" data-page="cadastro-armarios" href="#">
+          <span class="sidebar__icon"><i class="fas fa-archive" aria-hidden="true"></i></span>
+          <span class="sidebar__label">Cadastro de Armários</span>
+        </a>
+      </li>
+      <li class="sidebar__item">
+        <a class="sidebar__link" data-page="cadastro-unidades" href="#">
+          <span class="sidebar__icon"><i class="fas fa-hospital" aria-hidden="true"></i></span>
+          <span class="sidebar__label">Cadastro de Unidades</span>
+        </a>
+      </li>
+      <li class="sidebar__item">
+        <a class="sidebar__link" data-page="usuarios" href="#">
+          <span class="sidebar__icon"><i class="fas fa-users" aria-hidden="true"></i></span>
+          <span class="sidebar__label">Usuários</span>
+        </a>
+      </li>
+      <li class="sidebar__item">
+        <a class="sidebar__link" data-page="logs" href="#">
+          <span class="sidebar__icon"><i class="fas fa-clipboard-list" aria-hidden="true"></i></span>
+          <span class="sidebar__label">LOGS</span>
+        </a>
+      </li>
+    </ul>
+  </nav>
+</aside>
+      <main class="app-main">
+        <header class="app-header" aria-label="Cabeçalho principal">
+  <div class="app-header__info">
+    <h2 class="app-header__title" id="app-page-title">Dashboard</h2>
+  </div>
+  <div class="app-header__actions">
+    <div class="app-header__selectors">
+      <div class="selector-group">
+        <label class="selector-group__label" for="profile-select">Perfil</label>
+        <select class="selector-group__field" id="profile-select">
+          <option value="visitante">Visitante</option>
+          <option value="acompanhante">Acompanhante</option>
+          <option value="ambos">Acomp/Visit</option>
+          <option value="admin" selected>Administrador</option>
+        </select>
+      </div>
+      <div class="selector-group">
+        <label class="selector-group__label" for="unit-select">Unidade</label>
+        <select class="selector-group__field" id="unit-select">
+          <option value="todas">Todas as unidades</option>
+        </select>
+      </div>
+    </div>
+    <button class="notification-bell" id="notification-bell" type="button" aria-label="Abrir painel de notificações">
+      <i class="fas fa-bell" aria-hidden="true"></i>
+      <span class="notification-badge" id="notification-badge">0</span>
+    </button>
+    <div class="user-profile">
+      <span class="user-profile__avatar" aria-hidden="true">JS</span>
+      <div class="user-profile__details">
+        <span class="user-profile__name">João Silva</span>
+        <span class="user-profile__role">Administrador</span>
+      </div>
+    </div>
+  </div>
+</header>
+        <section class="pages" id="pages-container">
+          <section class="page page--active" id="dashboard" data-page-title="Dashboard" aria-labelledby="dashboard-title">
+  <h3 class="visually-hidden" id="dashboard-title">Resumo de ocupação</h3>
+  <section class="cards-hero" aria-label="Indicadores de ocupação">
+    <article class="card livre">
+      <div class="card-header">
+        <h4 class="card-title">Livres</h4>
+        <span class="card-icon" aria-hidden="true"><i class="fas fa-check-circle"></i></span>
+      </div>
+      <p class="card-value" id="livres-count">0</p>
+      <p class="card-description">Armários disponíveis</p>
+    </article>
+    <article class="card em-uso">
+      <div class="card-header">
+        <h4 class="card-title">Em uso</h4>
+        <span class="card-icon" aria-hidden="true"><i class="fas fa-user-clock"></i></span>
+      </div>
+      <p class="card-value" id="em-uso-count">0</p>
+      <p class="card-description">Armários ocupados</p>
+    </article>
+    <article class="card proximo">
+      <div class="card-header">
+        <h4 class="card-title">Próximo do horário</h4>
+        <span class="card-icon" aria-hidden="true"><i class="fas fa-exclamation-triangle"></i></span>
+      </div>
+      <p class="card-value" id="proximo-count">0</p>
+      <p class="card-description">Armários prestes a vencer</p>
+    </article>
+    <article class="card vencido">
+      <div class="card-header">
+        <h4 class="card-title">Vencidos</h4>
+        <span class="card-icon" aria-hidden="true"><i class="fas fa-times-circle"></i></span>
+      </div>
+      <p class="card-value" id="vencidos-count">0</p>
+      <p class="card-description">Armários com tempo excedido</p>
+    </article>
+  </section>
+
+  <section class="filters" aria-label="Filtrar armários">
+    <button class="filter-btn active" data-filter="todos" type="button">Todos</button>
+    <button class="filter-btn" data-filter="livre" type="button">Livre</button>
+    <button class="filter-btn" data-filter="em-uso" type="button">Em uso</button>
+    <button class="filter-btn" data-filter="proximo" type="button">Próximo do horário</button>
+    <button class="filter-btn" data-filter="vencido" type="button">Vencido</button>
+  </section>
+
+  <section class="armarios-grid" id="armarios-container" aria-live="polite" aria-label="Armários filtrados">
+    <!-- Armários renderizados via JavaScript -->
+  </section>
+</section>
+          <section class="page" id="visitantes" data-page-title="Visitantes">
+  <article class="data-table" aria-labelledby="visitantes-title">
+    <div class="table-header">
+      <h3 id="visitantes-title">Armários de Visitantes</h3>
+      <button class="btn btn-primary" id="btn-novo-visitante" type="button">
+        <i class="fas fa-plus" aria-hidden="true"></i> Novo Cadastro
+      </button>
+    </div>
+    <div class="table-container">
+      <table id="tabela-visitantes">
+        <thead>
+          <tr>
+            <th>Número</th>
+            <th>Unidade</th>
+            <th>Status</th>
+            <th>Visitante</th>
+            <th>Paciente</th>
+            <th>Leito</th>
+            <th>Volumes</th>
+            <th>Hora Início</th>
+            <th>Previsão Saída</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Populado via JavaScript -->
+        </tbody>
+      </table>
+    </div>
+  </article>
+</section>
+          <section class="page" id="acompanhantes" data-page-title="Acompanhantes">
+  <article class="data-table" aria-labelledby="acompanhantes-title">
+    <div class="table-header">
+      <h3 id="acompanhantes-title">Armários de Acompanhantes</h3>
+      <button class="btn btn-primary" id="btn-novo-acompanhante" type="button">
+        <i class="fas fa-plus" aria-hidden="true"></i> Novo Cadastro
+      </button>
+    </div>
+    <div class="table-container">
+      <table id="tabela-acompanhantes">
+        <thead>
+          <tr>
+            <th>Número</th>
+            <th>Unidade</th>
+            <th>Status</th>
+            <th>Acompanhante</th>
+            <th>Paciente</th>
+            <th>Leito</th>
+            <th>Volumes</th>
+            <th>Hora Início</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Populado via JavaScript -->
+        </tbody>
+      </table>
+    </div>
+  </article>
+</section>
+          <section class="page" id="historico-visitantes" data-page-title="Histórico Visitantes">
+  <article class="data-table" aria-labelledby="historico-visitantes-title">
+    <div class="table-header">
+      <h3 id="historico-visitantes-title">Histórico de Visitantes</h3>
+    </div>
+    <div class="table-container">
+      <table id="tabela-historico-visitantes">
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Armário</th>
+            <th>Visitante</th>
+            <th>Paciente</th>
+            <th>Leito</th>
+            <th>Volumes</th>
+            <th>Hora Início</th>
+            <th>Hora Fim</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Populado via JavaScript -->
+        </tbody>
+      </table>
+    </div>
+  </article>
+</section>
+          <section class="page" id="historico-acompanhantes" data-page-title="Histórico Acompanhantes">
+  <article class="data-table" aria-labelledby="historico-acompanhantes-title">
+    <div class="table-header">
+      <h3 id="historico-acompanhantes-title">Histórico de Acompanhantes</h3>
+    </div>
+    <div class="table-container">
+      <table id="tabela-historico-acompanhantes">
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Armário</th>
+            <th>Acompanhante</th>
+            <th>Paciente</th>
+            <th>Leito</th>
+            <th>Volumes</th>
+            <th>Hora Início</th>
+            <th>Hora Fim</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Populado via JavaScript -->
+        </tbody>
+      </table>
+    </div>
+  </article>
+</section>
+          <section class="page" id="termo-responsabilidade" data-page-title="Termo de Responsabilidade">
+  <article class="data-table" aria-labelledby="termo-responsabilidade-title">
+    <div class="table-header">
+      <div>
+        <h3 id="termo-responsabilidade-title">Termos de Responsabilidade Ativos</h3>
+        <p class="text-muted">Apenas armários de acompanhantes com termo aplicado aparecem nesta lista.</p>
+      </div>
+    </div>
+    <div class="table-container">
+      <table id="tabela-termos">
+        <thead>
+          <tr>
+            <th>Armário</th>
+            <th>Acompanhante</th>
+            <th>Paciente</th>
+            <th>Aplicado em</th>
+            <th>Movimentações</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Populado via JavaScript -->
+        </tbody>
+      </table>
+    </div>
+  </article>
+</section>
+          <section class="page" id="cadastro-armarios" data-page-title="Cadastro de Armários">
+  <article class="data-table" aria-labelledby="cadastro-armarios-title">
+    <div class="table-header">
+      <h3 id="cadastro-armarios-title">Cadastro de Armários</h3>
+      <button class="btn btn-primary" id="btn-novo-armario" type="button">
+        <i class="fas fa-plus" aria-hidden="true"></i> Novo Armário
+      </button>
+    </div>
+    <div class="table-container">
+      <table id="tabela-cadastro-armarios">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Número</th>
+            <th>Tipo</th>
+            <th>Unidade</th>
+            <th>Localização</th>
+            <th>Status</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Populado via JavaScript -->
+        </tbody>
+      </table>
+    </div>
+  </article>
+</section>
+          <section class="page" id="cadastro-unidades" data-page-title="Cadastro de Unidades">
+  <article class="data-table" aria-labelledby="cadastro-unidades-title">
+    <div class="table-header">
+      <h3 id="cadastro-unidades-title">Cadastro de Unidades</h3>
+      <button class="btn btn-primary" id="btn-nova-unidade" type="button">
+        <i class="fas fa-plus" aria-hidden="true"></i> Nova Unidade
+      </button>
+    </div>
+    <div class="table-container">
+      <table id="tabela-unidades">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Unidade</th>
+            <th>Status</th>
+            <th>Armários cadastrados</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Populado via JavaScript -->
+        </tbody>
+      </table>
+    </div>
+  </article>
+</section>
+          <section class="page" id="usuarios" data-page-title="Usuários">
+  <article class="data-table" aria-labelledby="usuarios-title">
+    <div class="table-header">
+      <h3 id="usuarios-title">Usuários do Sistema</h3>
+      <button class="btn btn-primary" id="btn-novo-usuario" type="button">
+        <i class="fas fa-plus" aria-hidden="true"></i> Novo Usuário
+      </button>
+    </div>
+    <div class="table-container">
+      <table id="tabela-usuarios">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Nome</th>
+            <th>Email</th>
+            <th>Perfil</th>
+            <th>Acesso Visitantes</th>
+            <th>Acesso Acompanhantes</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Populado via JavaScript -->
+        </tbody>
+      </table>
+    </div>
+  </article>
+</section>
+          <section class="page" id="logs" data-page-title="LOGS">
+  <article class="data-table" aria-labelledby="logs-title">
+    <div class="table-header">
+      <h3 id="logs-title">Logs do Sistema</h3>
+    </div>
+    <div class="table-container">
+      <table id="tabela-logs">
+        <thead>
+          <tr>
+            <th>Data/Hora</th>
+            <th>Usuário</th>
+            <th>Ação</th>
+            <th>Detalhes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Populado via JavaScript -->
+        </tbody>
+      </table>
+    </div>
+  </article>
+</section>
+        </section>
+      </main>
+    </div>
+
+    <!-- Modal: cadastro de armário -->
+<div class="modal" id="armario-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h4 class="modal-title" id="modal-title">Cadastrar Armário</h4>
+      <button class="modal-close" id="modal-close" type="button" aria-label="Fechar">&times;</button>
+    </div>
+    <div class="modal-body">
+      <form id="armario-form">
+        <div class="form-group">
+          <label for="nome-visitante">Nome do Visitante</label>
+          <input class="form-control" id="nome-visitante" name="nomeVisitante" type="text" required>
+        </div>
+        <div class="form-group">
+          <label for="nome-paciente">Nome do Paciente</label>
+          <input class="form-control" id="nome-paciente" name="nomePaciente" type="text" required>
+        </div>
+        <div class="form-group">
+          <label for="leito">Leito</label>
+          <input class="form-control" id="leito" name="leito" type="text" required>
+        </div>
+        <div class="form-group">
+          <label for="volumes">Quantidade de Volumes</label>
+          <input class="form-control" id="volumes" name="volumes" type="number" min="1" required>
+        </div>
+        <div class="form-group" id="hora-prevista-group">
+          <label for="hora-prevista">Hora Prevista de Saída</label>
+          <input class="form-control" id="hora-prevista" name="horaPrevista" type="time" required>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-secondary" id="btn-cancelar" type="button">Cancelar</button>
+          <button class="btn btn-primary" id="btn-salvar" type="submit">Salvar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: cadastro de usuário -->
+<div class="modal" id="usuario-modal" role="dialog" aria-modal="true" aria-labelledby="usuario-modal-title">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h4 class="modal-title" id="usuario-modal-title">Cadastrar Usuário</h4>
+      <button class="modal-close" id="usuario-modal-close" type="button" aria-label="Fechar">&times;</button>
+    </div>
+    <div class="modal-body">
+      <form id="usuario-form">
+        <div class="form-group">
+          <label for="usuario-nome">Nome Completo</label>
+          <input class="form-control" id="usuario-nome" name="nome" type="text" required>
+        </div>
+        <div class="form-group">
+          <label for="usuario-email">Email</label>
+          <input class="form-control" id="usuario-email" name="email" type="email" required>
+        </div>
+        <div class="form-group">
+          <label for="usuario-perfil">Perfil</label>
+          <select class="form-control" id="usuario-perfil" name="perfil" required>
+            <option value="usuario">Usuário</option>
+            <option value="admin">Administrador</option>
+          </select>
+        </div>
+        <fieldset class="form-group">
+          <legend>Acessos</legend>
+          <label class="utility-flex-gap utility-flex-gap--center">
+            <input checked id="acesso-visitantes" type="checkbox">
+            <span>Visitantes</span>
+          </label>
+          <label class="utility-flex-gap utility-flex-gap--center">
+            <input checked id="acesso-acompanhantes" type="checkbox">
+            <span>Acompanhantes</span>
+          </label>
+        </fieldset>
+        <div class="form-actions">
+          <button class="btn btn-secondary" id="usuario-btn-cancelar" type="button">Cancelar</button>
+          <button class="btn btn-primary" id="usuario-btn-salvar" type="submit">Salvar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: termo de responsabilidade -->
+<div class="modal modal-full" id="termo-modal" role="dialog" aria-modal="true" aria-labelledby="termo-modal-title">
+  <div class="modal-content modal-scrollable">
+    <article class="wizard-card" id="termo-card">
+      <div class="wizard-header">
+        <div>
+          <h4 class="wizard-title" id="termo-modal-title">Termo de responsabilidade do armário <span id="termo-armario"></span></h4>
+          <p class="wizard-subtitle">Preencha os dados do acompanhante e do paciente antes de aplicar o termo.</p>
+        </div>
+        <div class="wizard-progress">
+          <div class="wizard-progress-bar"><span id="termo-progress"></span></div>
+          <p class="wizard-progress-label" id="termo-progress-label">Passo 1 de 3</p>
+        </div>
+        <button class="modal-close" id="termo-modal-close" type="button" aria-label="Fechar">&times;</button>
+      </div>
+      <div class="wizard-body">
+        <form id="termo-form" autocomplete="off">
+          <div class="wizard-step active" data-step="0">
+            <div class="wizard-grid">
+              <div class="wizard-col-12"><span class="wizard-badge">Dados do paciente</span></div>
+              <div class="wizard-col-8">
+                <div class="wizard-field">
+                  <label class="wizard-required" for="termo-paciente">Nome do paciente</label>
+                  <input class="wizard-input" id="termo-paciente" type="text" required>
+                  <span class="wizard-error">Informe o nome completo do paciente.</span>
+                </div>
+              </div>
+              <div class="wizard-col-4">
+                <div class="wizard-field">
+                  <label class="wizard-required" for="termo-prontuario">Prontuário</label>
+                  <input class="wizard-input" id="termo-prontuario" type="text" required>
+                  <span class="wizard-error">Informe o número do prontuário.</span>
+                </div>
+              </div>
+              <div class="wizard-col-4">
+                <div class="wizard-field">
+                  <label class="wizard-required" for="termo-nascimento">Data de nascimento</label>
+                  <input class="wizard-input" id="termo-nascimento" type="date" required>
+                  <span class="wizard-error">Informe a data de nascimento.</span>
+                </div>
+              </div>
+              <div class="wizard-col-4">
+                <div class="wizard-field">
+                  <label class="wizard-required" for="termo-setor">Setor de internação</label>
+                  <input class="wizard-input" id="termo-setor" type="text" required>
+                  <span class="wizard-error">Informe o setor de internação.</span>
+                </div>
+              </div>
+              <div class="wizard-col-4">
+                <div class="wizard-field">
+                  <label class="wizard-required" for="termo-leito">Leito</label>
+                  <input class="wizard-input" id="termo-leito" type="text" required>
+                  <span class="wizard-error">Informe o leito.</span>
+                </div>
+              </div>
+              <div class="wizard-col-12">
+                <div class="wizard-field">
+                  <label for="termo-consciente" class="wizard-required">Paciente consciente?</label>
+                  <select class="wizard-select" id="termo-consciente" required>
+                    <option value="">Selecione</option>
+                    <option value="Sim">Sim</option>
+                    <option value="Não">Não</option>
+                  </select>
+                  <span class="wizard-error">Informe se o paciente está consciente.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="wizard-step" data-step="1">
+            <div class="wizard-grid">
+              <div class="wizard-col-12"><span class="wizard-badge">Dados do acompanhante</span></div>
+              <div class="wizard-col-6">
+                <div class="wizard-field">
+                  <label class="wizard-required" for="termo-acompanhante">Nome do acompanhante</label>
+                  <input class="wizard-input" id="termo-acompanhante" type="text" required>
+                  <span class="wizard-error">Informe o nome completo do acompanhante.</span>
+                </div>
+              </div>
+              <div class="wizard-col-3">
+                <div class="wizard-field">
+                  <label class="wizard-required" for="termo-telefone">Telefone</label>
+                  <input class="wizard-input" id="termo-telefone" type="tel" required>
+                  <span class="wizard-error">Informe um telefone para contato.</span>
+                </div>
+              </div>
+              <div class="wizard-col-3">
+                <div class="wizard-field">
+                  <label class="wizard-required" for="termo-documento">Documento</label>
+                  <input class="wizard-input" id="termo-documento" type="text" required>
+                  <span class="wizard-error">Informe o documento.</span>
+                </div>
+              </div>
+              <div class="wizard-col-4">
+                <div class="wizard-field">
+                  <label class="wizard-required" for="termo-parentesco">Parentesco</label>
+                  <input class="wizard-input" id="termo-parentesco" type="text" required>
+                  <span class="wizard-error">Informe o parentesco.</span>
+                </div>
+              </div>
+              <div class="wizard-col-8">
+                <div class="wizard-field">
+                  <label for="termo-orientacoes">Orientações transmitidas</label>
+                  <div class="wizard-volume-grid" id="termo-orientacoes"></div>
+                  <div class="wizard-volume-actions">
+                    <button class="btn btn-ghost" id="termo-add-orientacao" type="button">
+                      <i class="fas fa-plus" aria-hidden="true"></i> Adicionar orientação
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="wizard-step" data-step="2">
+            <div class="wizard-grid">
+              <div class="wizard-col-12"><span class="wizard-badge">Volumes armazenados</span></div>
+              <div class="wizard-col-12">
+                <div class="wizard-field">
+                  <label class="wizard-required">Descreva os volumes</label>
+                  <div class="wizard-volume-grid" id="termo-volumes-list"></div>
+                  <div class="wizard-volume-actions">
+                    <button class="btn btn-ghost" id="termo-add-volume" type="button">
+                      <i class="fas fa-plus" aria-hidden="true"></i> Novo volume
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div class="wizard-col-12">
+                <div class="wizard-field">
+                  <label class="wizard-required" for="termo-volumes-field">Resumo dos volumes</label>
+                  <textarea class="wizard-textarea" id="termo-volumes-field" required></textarea>
+                  <span class="wizard-error">Forneça um resumo dos volumes.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="wizard-actions">
+        <button class="btn btn-ghost" id="termo-btn-voltar" type="button">Voltar</button>
+        <div class="utility-flex-gap">
+          <button class="btn btn-secondary" id="termo-btn-cancelar" type="button">Cancelar</button>
+          <button class="btn btn-primary" id="termo-btn-avancar" type="button">Avançar</button>
+        </div>
+      </div>
+    </article>
+  </div>
+</div>
+
+<!-- Modal: movimentações -->
+<div class="modal modal-large" id="movimentacao-modal" role="dialog" aria-modal="true" aria-labelledby="movimentacao-modal-title">
+  <div class="modal-content modal-scrollable">
+    <div class="modal-header">
+      <h4 class="modal-title" id="movimentacao-modal-title">Movimentações</h4>
+      <button class="modal-close" id="movimentacao-modal-close" type="button" aria-label="Fechar">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="info-box">Registre entradas e saídas de objetos do armário sempre que ocorrer qualquer movimentação.</div>
+      <div class="movimentacoes-list" id="movimentacoes-list"></div>
+      <form id="movimentacao-form">
+        <div class="form-group">
+          <label for="mov-tipo">Tipo de movimentação</label>
+          <select class="form-control" id="mov-tipo" required>
+            <option value="">Selecione</option>
+            <option value="entrada">Entrada de pertences</option>
+            <option value="saida">Saída de pertences</option>
+            <option value="conferencia">Conferência</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="mov-descricao">Descrição</label>
+          <textarea class="form-control" id="mov-descricao" rows="3" required placeholder="Descreva brevemente o que ocorreu"></textarea>
+        </div>
+        <div class="form-group">
+          <label for="mov-responsavel">Responsável pelo registro</label>
+          <input class="form-control" id="mov-responsavel" type="text" placeholder="Nome do colaborador" required>
+        </div>
+        <div class="form-group form-group--inline">
+          <div>
+            <label for="mov-data">Data</label>
+            <input class="form-control" id="mov-data" type="date" required>
+          </div>
+          <div>
+            <label for="mov-hora">Hora</label>
+            <input class="form-control" id="mov-hora" type="time" required>
+          </div>
+        </div>
+        <div class="form-actions form-actions--start">
+          <button class="btn btn-primary" type="submit">Adicionar movimentação</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: liberação -->
+<div class="modal modal-large" id="liberacao-modal" role="dialog" aria-modal="true" aria-labelledby="liberacao-modal-title">
+  <div class="modal-content modal-scrollable">
+    <div class="modal-header">
+      <h4 class="modal-title" id="liberacao-modal-title">Encerrar armário <span id="liberacao-armario"></span></h4>
+      <button class="modal-close" id="liberacao-modal-close" type="button" aria-label="Fechar">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p class="text-muted">Confirme os dados antes de liberar o armário. Esta ação removerá o vínculo do acompanhante e encerrará o termo.</p>
+      <div class="info-box" id="liberacao-detalhes"></div>
+      <section class="confirm-slider">
+        <label for="liberacao-slider">Arraste para confirmar a identificação</label>
+        <input id="liberacao-slider" max="100" min="0" type="range" value="0">
+        <span class="text-muted">Deslize o controle totalmente para a direita para habilitar a confirmação.</span>
+      </section>
+      <div class="confirm-statement">
+        <input id="liberacao-checkbox" type="checkbox">
+        <span>Declaro que após ter recebido os devidos esclarecimentos, confirmo que esta liberação corresponde à pessoa identificada e estou ciente das responsabilidades assumidas.</span>
+      </div>
+      <p><strong>Data:</strong> <span id="liberacao-data"></span></p>
+      <section class="signature-section">
+        <p class="text-muted">Escolha uma forma de confirmação:</p>
+        <div class="signature-methods">
+          <label>
+            <input checked name="liberacao-metodo" type="radio" value="assinatura">
+            <span>Assinatura digital</span>
+          </label>
+          <label>
+            <input name="liberacao-metodo" type="radio" value="cpf">
+            <span>5 primeiros dígitos do CPF</span>
+          </label>
+        </div>
+        <div class="signature-area" id="assinatura-area">
+          <canvas class="signature-canvas" id="signature-canvas"></canvas>
+          <div class="signature-actions">
+            <button class="btn btn-secondary" id="signature-clear" type="button">Limpar assinatura</button>
+          </div>
+        </div>
+        <div class="signature-area is-hidden" id="cpf-area">
+          <div class="wizard-field">
+            <label class="wizard-required" for="cpf-confirmacao">Informe os 5 primeiros dígitos do CPF</label>
+            <input class="form-control cpf-input" id="cpf-confirmacao" inputmode="numeric" maxlength="5" pattern="[0-9]*" type="text">
+          </div>
+        </div>
+      </section>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="liberacao-btn-cancelar" type="button">Cancelar</button>
+      <button class="btn btn-primary" id="liberacao-btn-confirmar" type="button" disabled>Confirmar liberação</button>
+    </div>
+  </div>
+</div>
+    <aside class="notification-panel" id="notification-panel" aria-live="polite" aria-label="Notificações do sistema">
+  <div class="notification-header">Notificações</div>
+  <div class="notification-list" id="notification-list">
+    <p class="text-muted" id="notification-empty">Nenhuma notificação pendente.</p>
+  </div>
+</aside>
+    <?!= include('script'); ?>
+  </body>
+</html>
