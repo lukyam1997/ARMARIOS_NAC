@@ -402,6 +402,7 @@
       registroArmarioTitulo: document.getElementById('registro-armario-titulo'),
       registroArmarioForm: document.getElementById('registro-armario-form'),
       registroArmarioCancelar: document.getElementById('registro-armario-cancelar'),
+      registroArmarioConfirmar: document.getElementById('registro-armario-confirmar'),
       registroArmarioId: document.getElementById('registro-armario-id'),
       registroArmarioNomeVisitante: document.getElementById('registro-nome-visitante'),
       registroArmarioTelefone: document.getElementById('registro-telefone'),
@@ -596,73 +597,130 @@
       return;
     }
 
-    const dados = new FormData(Elements.registroArmarioForm);
-    const nomeVisitante = (dados.get('nomeVisitante') || '').toString().trim();
-    const telefone = (dados.get('telefone') || '').toString().trim();
-    const paciente = (dados.get('paciente') || '').toString().trim();
-    const leito = (dados.get('leito') || '').toString().trim();
-    const volumes = Number(dados.get('volumes')) || 0;
-    const previsao = (dados.get('previsaoRetirada') || '').toString();
+    const finalizarLoading = iniciarLoadingBotao(Elements.registroArmarioConfirmar);
 
-    const agora = new Date();
-    const horaInicio = agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-    const armarioIdReferencia = registroArmarioAtual.id ?? registroArmarioAtual.numero;
-    let armarioAtualizado = false;
+    try {
+      const dados = new FormData(Elements.registroArmarioForm);
+      const nomeVisitante = (dados.get('nomeVisitante') || '').toString().trim();
+      const telefone = (dados.get('telefone') || '').toString().trim();
+      const paciente = (dados.get('paciente') || '').toString().trim();
+      const leito = (dados.get('leito') || '').toString().trim();
+      const volumes = Number(dados.get('volumes')) || 0;
+      const previsao = (dados.get('previsaoRetirada') || '').toString().trim();
+      const tipo = registroArmarioAtual.tipo || 'visitante';
+      const numeroArmario = (registroArmarioAtual.numero || '').toString().trim();
+      const armarioId = registroArmarioAtual.id;
 
-    const armariosAtualizados = (AppState.get('armarios') || []).map((item) => {
-      const mesmoArmario =
-        item.id === registroArmarioAtual.id ||
-        String(item.id) === String(armarioIdReferencia) ||
-        (item.numero && registroArmarioAtual.numero && String(item.numero) === String(registroArmarioAtual.numero));
-
-      if (!mesmoArmario) {
-        return item;
+      if (!numeroArmario) {
+        const mensagem = 'Não foi possível identificar o armário selecionado.';
+        if (typeof Swal !== 'undefined') {
+          Swal.fire('Armário inválido', mensagem, 'error');
+        } else {
+          alert(mensagem);
+        }
+        return;
       }
 
-      armarioAtualizado = true;
-      return {
-        ...item,
-        status: 'em-uso',
-        nomeVisitante,
-        telefone,
-        nomePaciente: paciente,
-        leito,
-        volumes,
-        horaInicio,
-        horaPrevista: previsao,
-        previsaoRetirada: previsao,
-        termoAplicado: item.termoAplicado || false
-      };
-    });
+      if (hasAppsScript) {
+        const payload = {
+          id: armarioId,
+          numero: numeroArmario,
+          tipo,
+          nomeVisitante,
+          nomePaciente: paciente,
+          leito,
+          volumes,
+          previsaoRetirada: previsao,
+          telefone
+        };
 
-    if (!armarioAtualizado) {
-      armariosAtualizados.push({
-        id: registroArmarioAtual.id ?? Date.now(),
-        numero: registroArmarioAtual.numero || '',
-        status: 'em-uso',
-        tipo: registroArmarioAtual.tipo || 'visitante',
-        unidade: registroArmarioAtual.unidade || '',
-        nomeVisitante,
-        telefone,
-        nomePaciente: paciente,
-        leito,
-        volumes,
-        horaInicio,
-        horaPrevista: previsao,
-        previsaoRetirada: previsao,
-        termoAplicado: false
+        const resposta = await ApiClient.call('registrarUsoArmario', payload);
+        if (!resposta || !resposta.success) {
+          throw new Error((resposta && resposta.error) || 'Não foi possível salvar o registro do armário.');
+        }
+
+        fecharModalRegistroArmario();
+        await Promise.all([sincronizarArmarios(), sincronizarHistorico()]);
+        atualizarInterface();
+        carregarDadosTabelas();
+
+        if (typeof Swal !== 'undefined') {
+          Swal.fire('Registro salvo', 'Armário atualizado com sucesso.', 'success');
+        } else {
+          alert('Armário atualizado com sucesso.');
+        }
+        return;
+      }
+
+      const agora = new Date();
+      const horaInicio = agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      const armarioIdReferencia = armarioId ?? numeroArmario;
+      let armarioAtualizado = false;
+
+      const armariosAtualizados = (AppState.get('armarios') || []).map((item) => {
+        const mesmoArmario =
+          item.id === armarioId ||
+          String(item.id) === String(armarioIdReferencia) ||
+          (item.numero && numeroArmario && String(item.numero) === numeroArmario);
+
+        if (!mesmoArmario) {
+          return item;
+        }
+
+        armarioAtualizado = true;
+        return {
+          ...item,
+          status: 'em-uso',
+          nomeVisitante,
+          telefone,
+          nomePaciente: paciente,
+          leito,
+          volumes,
+          horaInicio,
+          horaPrevista: previsao,
+          previsaoRetirada: previsao,
+          termoAplicado: item.termoAplicado || false
+        };
       });
-    }
 
-    AppState.set('armarios', armariosAtualizados);
-    fecharModalRegistroArmario();
-    atualizarInterface();
-    carregarDadosTabelas();
+      if (!armarioAtualizado) {
+        armariosAtualizados.push({
+          id: armarioId ?? Date.now(),
+          numero: numeroArmario,
+          status: 'em-uso',
+          tipo,
+          unidade: registroArmarioAtual.unidade || '',
+          nomeVisitante,
+          telefone,
+          nomePaciente: paciente,
+          leito,
+          volumes,
+          horaInicio,
+          horaPrevista: previsao,
+          previsaoRetirada: previsao,
+          termoAplicado: false
+        });
+      }
 
-    if (typeof Swal !== 'undefined') {
-      Swal.fire('Registro salvo', 'Armário atualizado com sucesso.', 'success');
-    } else {
-      alert('Armário atualizado com sucesso.');
+      AppState.set('armarios', armariosAtualizados);
+      fecharModalRegistroArmario();
+      atualizarInterface();
+      carregarDadosTabelas();
+
+      if (typeof Swal !== 'undefined') {
+        Swal.fire('Registro salvo', 'Armário atualizado com sucesso.', 'success');
+      } else {
+        alert('Armário atualizado com sucesso.');
+      }
+    } catch (error) {
+      console.error('Erro ao registrar armário no dashboard', error);
+      if (typeof Swal !== 'undefined') {
+        Swal.fire('Erro', error.message || 'Não foi possível salvar o registro do armário.', 'error');
+      } else {
+        alert(error.message || 'Não foi possível salvar o registro do armário.');
+      }
+    } finally {
+      finalizarLoading();
     }
   }
 

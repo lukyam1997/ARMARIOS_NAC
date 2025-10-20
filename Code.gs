@@ -74,6 +74,8 @@ function handlePost(e) {
         return respond(ArmarioService.list(params.tipo));
       case 'cadastrarArmario':
         return respond(ArmarioService.create(params));
+      case 'registrarUsoArmario':
+        return respond(ArmarioService.assign(params));
       case 'liberarArmario':
         return respond(ArmarioService.release(Number(params.id), params.tipo));
       case 'getUsuarios':
@@ -167,6 +169,10 @@ function getArmarios(params) {
 
 function cadastrarArmario(params) {
   return ArmarioService.create(params || {});
+}
+
+function registrarUsoArmario(params) {
+  return ArmarioService.assign(params || {});
 }
 
 function liberarArmario(params) {
@@ -505,6 +511,9 @@ var ArmarioService = {
     var nomePaciente = normalizeText(params.nomePaciente);
     var leito = normalizeText(params.leito);
     var volumes = sanitizeNumber(params.volumes, 0);
+    if (volumes < 0) {
+      volumes = 0;
+    }
     var horaPrevista = '';
     if (tipo === 'visitante') {
       var horaPrevistaData = parseHoraPrevista(params.horaPrevista);
@@ -574,6 +583,120 @@ var ArmarioService = {
       return {
         success: true,
         id: novoId
+      };
+    });
+  },
+  assign: function(params) {
+    var tipo = params.tipo === 'acompanhante' ? 'acompanhante' : 'visitante';
+    var numero = normalizeText(params.numero);
+    var nomeVisitante = normalizeText(params.nomeVisitante || params.responsavel);
+    var nomePaciente = normalizeText(params.nomePaciente || params.paciente);
+    var leito = normalizeText(params.leito);
+    var volumes = sanitizeNumber(params.volumes, 0);
+    if (volumes < 0) {
+      volumes = 0;
+    }
+    var idParam = toFiniteNumber(params.id);
+    var previsao = '';
+
+    if (!numero) {
+      return { success: false, error: 'Informe o número do armário.' };
+    }
+    if (!nomeVisitante) {
+      return { success: false, error: 'Informe o responsável pelo armário.' };
+    }
+    if (!nomePaciente) {
+      return { success: false, error: 'Informe o paciente associado.' };
+    }
+
+    if (tipo === 'visitante') {
+      var origemPrevisao = params.previsaoRetirada || params.horaPrevista;
+      var dataPrevista = parseDateValue(origemPrevisao);
+      if (!dataPrevista) {
+        dataPrevista = parseHoraPrevista(origemPrevisao);
+      }
+      previsao = dataPrevista || '';
+    }
+
+    return withLock('armario_assign_' + tipo, function() {
+      var sheetName = tipo === 'acompanhante' ? 'Acompanhantes' : 'Visitantes';
+      var sheet = getSheet(sheetName);
+      var lastRow = sheet.getLastRow();
+      if (lastRow <= 1) {
+        return { success: false, error: 'Nenhum armário cadastrado.' };
+      }
+
+      var colunas = tipo === 'acompanhante' ? 9 : 10;
+      var values = sheet.getRange(2, 1, lastRow - 1, colunas).getValues();
+      var linhaIndex = -1;
+      var linhaAtual = null;
+      var idEncontrado = idParam;
+
+      values.some(function(row, index) {
+        var rowId = toFiniteNumber(row[0]);
+        var rowNumero = normalizeText(row[1]);
+        if ((idParam !== null && rowId === idParam) || (idParam === null && rowNumero === numero)) {
+          linhaIndex = index + 2;
+          linhaAtual = row;
+          if (rowId !== null) {
+            idEncontrado = rowId;
+          }
+          return true;
+        }
+        return false;
+      });
+
+      if (linhaIndex === -1) {
+        return { success: false, error: 'Armário não encontrado.' };
+      }
+
+      var statusAnterior = normalizeText(linhaAtual[2]).toLowerCase();
+      var agora = timestamp();
+      var horaInicio = agora.toLocaleTimeString('pt-BR');
+      var dataRegistro = agora;
+      var novaLinha = [
+        idEncontrado,
+        numero,
+        'em-uso',
+        nomeVisitante,
+        nomePaciente,
+        leito,
+        volumes,
+        horaInicio
+      ];
+
+      if (tipo === 'visitante') {
+        novaLinha.push(previsao || '');
+      }
+
+      novaLinha.push(dataRegistro);
+
+      sheet.getRange(linhaIndex, 1, 1, novaLinha.length).setValues([novaLinha]);
+
+      if (statusAnterior !== 'em-uso') {
+        HistoricoService.registrar({
+          tipo: tipo,
+          numero: numero,
+          responsavel: nomeVisitante,
+          paciente: nomePaciente,
+          leito: leito,
+          volumes: volumes
+        });
+      }
+
+      clearCache([
+        'ARMARIOS_visitante',
+        'ARMARIOS_acompanhante',
+        'HISTORICO_visitante',
+        'HISTORICO_acompanhante',
+        'NOTIFICACOES'
+      ].concat(ESTATISTICA_KEYS.map(function(key) { return 'ESTATISTICAS_' + key; })));
+
+      LogService.register('SISTEMA', 'Registro Armário', 'Armário ' + numero + ' atualizado via dashboard', '');
+
+      return {
+        success: true,
+        id: idEncontrado
       };
     });
   },
