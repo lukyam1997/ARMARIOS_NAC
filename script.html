@@ -616,7 +616,7 @@
         const icone = notificacao.tipo === 'danger' ? 'fa-exclamation' : 'fa-clock';
         item.innerHTML = `
           <span class="notification-icon ${notificacao.tipo}">
-            <i class="fas ${icone}"></i>
+            <i class="fa-solid ${icone}"></i>
           </span>
           <div class="notification-content">
             <span class="notification-title">${notificacao.titulo}</span>
@@ -952,7 +952,7 @@
       html: `
         <div class="swal-form-grid">
           <div class="swal-form-section">
-            <div class="swal-form-section-title"><i class="fas fa-archive"></i> Informações gerais</div>
+            <div class="swal-form-section-title"><i class="fa-solid fa-archive"></i> Informações gerais</div>
             <div class="swal-form-fields two-columns">
               <div class="swal-form-group">
                 <label for="cadastro-tipo">Tipo</label>
@@ -984,7 +984,7 @@
             </div>
           </div>
           <div class="swal-form-section">
-            <div class="swal-form-section-title"><i class="fas fa-hashtag"></i> Numeração dos armários</div>
+            <div class="swal-form-section-title"><i class="fa-solid fa-hashtag"></i> Numeração dos armários</div>
             <div class="swal-form-fields">
               <div class="swal-form-group">
                 <label for="cadastro-metodo">Método de numeração</label>
@@ -1036,7 +1036,7 @@
               </div>
               <div class="swal-form-preview">
                 <div class="swal-form-preview__header">
-                  <i class="fas fa-eye"></i>
+                  <i class="fa-solid fa-eye"></i>
                   <span>Pré-visualização da numeração</span>
                 </div>
                 <div class="swal-form-preview__value" id="cadastro-preview-valor">—</div>
