@@ -152,51 +152,27 @@
         return MockBackend.bootstrap();
       }
 
-      try {
-        const safeCall = (method, params) => executar(method, params).catch(() => null);
-
-        const [
-          unidadesRes,
-          cadastroRes,
-          usuariosRes,
-          logsRes,
-          notificacoesRes,
-          armariosVisitantesRes,
-          armariosAcompanhantesRes,
-          historicoVisitantesRes,
-          historicoAcompanhantesRes
-        ] = await Promise.all([
-          safeCall('getUnidades'),
-          safeCall('getCadastroArmarios'),
-          safeCall('getUsuarios'),
-          safeCall('getLogs'),
-          safeCall('getNotificacoes'),
-          safeCall('getArmarios', { tipo: 'visitante' }),
-          safeCall('getArmarios', { tipo: 'acompanhante' }),
-          safeCall('getHistorico', { tipo: 'visitante' }),
-          safeCall('getHistorico', { tipo: 'acompanhante' })
-        ]);
-
-        const extrairDados = (resposta, origem) => {
-          if (!resposta) {
-            return [];
-          }
-          if (Array.isArray(resposta.data)) {
-            return resposta.data;
-          }
-          if (resposta.success === false) {
-            if (resposta.error) {
-              console.error(`Erro na resposta de ${origem || 'serviço'}`, resposta.error);
-            }
-            return Array.isArray(resposta.data) ? resposta.data : [];
-          }
-          if (Array.isArray(resposta)) {
-            return resposta;
-          }
+      const extrairDados = (resposta, origem) => {
+        if (!resposta) {
           return [];
-        };
+        }
+        if (Array.isArray(resposta.data)) {
+          return resposta.data;
+        }
+        if (resposta && resposta.success === false) {
+          if (resposta.error) {
+            console.error(`Erro na resposta de ${origem || 'serviço'}`, resposta.error);
+          }
+          return Array.isArray(resposta.data) ? resposta.data : [];
+        }
+        if (Array.isArray(resposta)) {
+          return resposta;
+        }
+        return [];
+      };
 
-        const cadastroLista = extrairDados(cadastroRes, 'getCadastroArmarios');
+      const montarEstadoInicial = (respostas) => {
+        const cadastroLista = extrairDados(respostas.cadastroArmarios, 'getCadastroArmarios');
         const cadastroPorNumero = cadastroLista.reduce((acc, item) => {
           acc[item.numero] = item;
           return acc;
@@ -232,16 +208,16 @@
         };
 
         const armarios = [
-          ...normalizarArmarios(armariosVisitantesRes, 'visitante'),
-          ...normalizarArmarios(armariosAcompanhantesRes, 'acompanhante')
+          ...normalizarArmarios(respostas.armariosVisitantes, 'visitante'),
+          ...normalizarArmarios(respostas.armariosAcompanhantes, 'acompanhante')
         ];
 
         const historico = [
-          ...normalizarHistorico(historicoVisitantesRes, 'visitante'),
-          ...normalizarHistorico(historicoAcompanhantesRes, 'acompanhante')
+          ...normalizarHistorico(respostas.historicoVisitantes, 'visitante'),
+          ...normalizarHistorico(respostas.historicoAcompanhantes, 'acompanhante')
         ];
 
-        const unidades = extrairDados(unidadesRes, 'getUnidades').map((item) => {
+        const unidades = extrairDados(respostas.unidades, 'getUnidades').map((item) => {
           const idNormalizado = Sanitizer.toNumberValue(item.id);
           return {
             ...item,
@@ -249,7 +225,7 @@
           };
         });
 
-        const usuarios = extrairDados(usuariosRes, 'getUsuarios').map((item) => {
+        const usuarios = extrairDados(respostas.usuarios, 'getUsuarios').map((item) => {
           const idNormalizado = Sanitizer.toNumberValue(item.id);
           return {
             ...item,
@@ -272,10 +248,63 @@
           movimentacoes: {},
           historico,
           usuarios,
-          logs: extrairDados(logsRes, 'getLogs'),
+          logs: extrairDados(respostas.logs, 'getLogs'),
           cadastroArmarios,
-          notificacoes: extrairDados(notificacoesRes, 'getNotificacoes')
+          notificacoes: extrairDados(respostas.notificacoes, 'getNotificacoes')
         };
+      };
+
+      try {
+        const agregado = await executar('getBootstrapData').catch(() => null);
+        if (agregado && agregado.success !== false && agregado.data) {
+          return montarEstadoInicial({
+            unidades: agregado.data.unidades,
+            cadastroArmarios: agregado.data.cadastroArmarios,
+            usuarios: agregado.data.usuarios,
+            logs: agregado.data.logs,
+            notificacoes: agregado.data.notificacoes,
+            armariosVisitantes: agregado.data.armariosVisitantes,
+            armariosAcompanhantes: agregado.data.armariosAcompanhantes,
+            historicoVisitantes: agregado.data.historicoVisitantes,
+            historicoAcompanhantes: agregado.data.historicoAcompanhantes
+          });
+        }
+
+        const safeCall = (method, params) => executar(method, params).catch(() => null);
+
+        const [
+          unidadesRes,
+          cadastroRes,
+          usuariosRes,
+          logsRes,
+          notificacoesRes,
+          armariosVisitantesRes,
+          armariosAcompanhantesRes,
+          historicoVisitantesRes,
+          historicoAcompanhantesRes
+        ] = await Promise.all([
+          safeCall('getUnidades'),
+          safeCall('getCadastroArmarios'),
+          safeCall('getUsuarios'),
+          safeCall('getLogs'),
+          safeCall('getNotificacoes'),
+          safeCall('getArmarios', { tipo: 'visitante' }),
+          safeCall('getArmarios', { tipo: 'acompanhante' }),
+          safeCall('getHistorico', { tipo: 'visitante' }),
+          safeCall('getHistorico', { tipo: 'acompanhante' })
+        ]);
+
+        return montarEstadoInicial({
+          unidades: unidadesRes,
+          cadastroArmarios: cadastroRes,
+          usuarios: usuariosRes,
+          logs: logsRes,
+          notificacoes: notificacoesRes,
+          armariosVisitantes: armariosVisitantesRes,
+          armariosAcompanhantes: armariosAcompanhantesRes,
+          historicoVisitantes: historicoVisitantesRes,
+          historicoAcompanhantes: historicoAcompanhantesRes
+        });
       } catch (error) {
         console.error('Erro ao carregar dados iniciais', error);
         return MockBackend.bootstrap();
