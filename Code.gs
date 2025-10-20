@@ -684,6 +684,28 @@ var ArmarioService = {
         existentesSet[numero] = true;
       });
 
+      var sheetUso = getSheet(tipo === 'acompanhante' ? 'Acompanhantes' : 'Visitantes');
+      var colunasUso = tipo === 'acompanhante' ? 9 : 10;
+      var lastRowUso = sheetUso.getLastRow();
+      var numerosUsoExistentes = {};
+      var proximoIdUso = 1;
+
+      if (lastRowUso > 1) {
+        var valoresUso = sheetUso.getRange(2, 1, lastRowUso - 1, colunasUso).getValues();
+        var maiorIdUso = 0;
+        valoresUso.forEach(function(row) {
+          var idAtual = toFiniteNumber(row[0]);
+          if (idAtual !== null && idAtual > maiorIdUso) {
+            maiorIdUso = idAtual;
+          }
+          var numeroAtual = normalizeText(row[1]);
+          if (numeroAtual) {
+            numerosUsoExistentes[numeroAtual] = true;
+          }
+        });
+        proximoIdUso = maiorIdUso + 1;
+      }
+
       var novos = [];
       var novosSet = {};
 
@@ -717,6 +739,8 @@ var ArmarioService = {
         novosSet[numero] = true;
         novos.push(numero);
       }
+
+      var linhasUsoNovas = [];
 
       try {
         if (metodo === 'unico') {
@@ -772,9 +796,52 @@ var ArmarioService = {
           'ativo',
           timestamp()
         ]);
+        if (!numerosUsoExistentes[numero]) {
+          if (tipo === 'acompanhante') {
+            linhasUsoNovas.push([
+              proximoIdUso,
+              numero,
+              'livre',
+              '',
+              '',
+              '',
+              0,
+              '',
+              timestamp()
+            ]);
+          } else {
+            linhasUsoNovas.push([
+              proximoIdUso,
+              numero,
+              'livre',
+              '',
+              '',
+              '',
+              0,
+              '',
+              '',
+              timestamp()
+            ]);
+          }
+          numerosUsoExistentes[numero] = true;
+          proximoIdUso += 1;
+        }
       });
 
-      clearCache(['CADASTRO_ARMARIOS']);
+      if (linhasUsoNovas.length) {
+        var inicioUso = lastRowUso > 0 ? lastRowUso + 1 : 2;
+        sheetUso
+          .getRange(inicioUso, 1, linhasUsoNovas.length, colunasUso)
+          .setValues(linhasUsoNovas);
+        lastRowUso = inicioUso + linhasUsoNovas.length - 1;
+      }
+
+      clearCache([
+        'CADASTRO_ARMARIOS',
+        tipo === 'acompanhante' ? 'ARMARIOS_acompanhante' : 'ARMARIOS_visitante'
+      ].concat(ESTATISTICA_KEYS.map(function(key) {
+        return 'ESTATISTICAS_' + key;
+      })));
       LogService.register('SISTEMA', 'Cadastro Armário Físico', 'Armários cadastrados: ' + novos.join(', '), '');
 
       return { success: true, numeros: novos };
