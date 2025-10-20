@@ -44,6 +44,12 @@
       }
 
       try {
+        const safeCall = (method, params) =>
+          executar(method, params).catch((error) => {
+            console.error(`Erro ao executar ${method}`, error);
+            return null;
+          });
+
         const [
           unidadesRes,
           cadastroRes,
@@ -55,28 +61,44 @@
           historicoVisitantesRes,
           historicoAcompanhantesRes
         ] = await Promise.all([
-          executar('getUnidades'),
-          executar('getCadastroArmarios'),
-          executar('getUsuarios'),
-          executar('getLogs'),
-          executar('getNotificacoes'),
-          executar('getArmarios', { tipo: 'visitante' }),
-          executar('getArmarios', { tipo: 'acompanhante' }),
-          executar('getHistorico', { tipo: 'visitante' }),
-          executar('getHistorico', { tipo: 'acompanhante' })
+          safeCall('getUnidades'),
+          safeCall('getCadastroArmarios'),
+          safeCall('getUsuarios'),
+          safeCall('getLogs'),
+          safeCall('getNotificacoes'),
+          safeCall('getArmarios', { tipo: 'visitante' }),
+          safeCall('getArmarios', { tipo: 'acompanhante' }),
+          safeCall('getHistorico', { tipo: 'visitante' }),
+          safeCall('getHistorico', { tipo: 'acompanhante' })
         ]);
 
-        const cadastroLista = cadastroRes.data || [];
+        const extrairDados = (resposta, origem) => {
+          if (!resposta) {
+            return [];
+          }
+          if (Array.isArray(resposta.data)) {
+            return resposta.data;
+          }
+          if (resposta.success === false) {
+            if (resposta.error) {
+              console.error(`Erro na resposta de ${origem || 'serviço'}`, resposta.error);
+            }
+            return Array.isArray(resposta.data) ? resposta.data : [];
+          }
+          if (Array.isArray(resposta)) {
+            return resposta;
+          }
+          return [];
+        };
+
+        const cadastroLista = extrairDados(cadastroRes, 'getCadastroArmarios');
         const cadastroPorNumero = cadastroLista.reduce((acc, item) => {
           acc[item.numero] = item;
           return acc;
         }, {});
 
         const normalizarArmarios = (resposta, tipoPadrao) => {
-          if (!resposta || !resposta.success) {
-            return [];
-          }
-          return (resposta.data || []).map((item) => {
+          return extrairDados(resposta, `getArmarios:${tipoPadrao}`).map((item) => {
             const cadastro = cadastroPorNumero[item.numero] || {};
             return {
               ...item,
@@ -88,10 +110,7 @@
         };
 
         const normalizarHistorico = (resposta, tipoPadrao) => {
-          if (!resposta || !resposta.success) {
-            return [];
-          }
-          return (resposta.data || []).map((item) => ({
+          return extrairDados(resposta, `getHistorico:${tipoPadrao}`).map((item) => ({
             ...item,
             tipo: item.tipo || tipoPadrao
           }));
@@ -108,15 +127,15 @@
         ];
 
         return {
-          unidades: unidadesRes.data || [],
+          unidades: extrairDados(unidadesRes, 'getUnidades'),
           armarios,
           termos: {},
           movimentacoes: {},
           historico,
-          usuarios: usuariosRes.data || [],
-          logs: logsRes.data || [],
+          usuarios: extrairDados(usuariosRes, 'getUsuarios'),
+          logs: extrairDados(logsRes, 'getLogs'),
           cadastroArmarios: cadastroLista,
-          notificacoes: notificacoesRes.data || []
+          notificacoes: extrairDados(notificacoesRes, 'getNotificacoes')
         };
       } catch (error) {
         console.error('Erro ao carregar dados iniciais', error);
