@@ -80,6 +80,8 @@ function handlePost(e) {
         return respond(UsuarioService.list());
       case 'cadastrarUsuario':
         return respond(UsuarioService.create(params));
+      case 'removerUsuario':
+        return respond(UsuarioService.remove(Number(params.id)));
       case 'getLogs':
         return respond(LogService.list());
       case 'getNotificacoes':
@@ -92,6 +94,8 @@ function handlePost(e) {
         return respond(ArmarioService.listCadastro());
       case 'cadastrarArmarioFisico':
         return respond(ArmarioService.createCadastro(params));
+      case 'removerCadastroArmario':
+        return respond(ArmarioService.removeCadastro(Number(params.id)));
       default:
         return respond({ success: false, error: 'Ação não reconhecida' });
     }
@@ -149,8 +153,16 @@ function cadastrarArmarioFisico(params) {
   return ArmarioService.createCadastro(params || {});
 }
 
+function removerCadastroArmario(params) {
+  return ArmarioService.removeCadastro(Number(params && params.id));
+}
+
 function cadastrarUsuario(params) {
   return UsuarioService.create(params || {});
+}
+
+function removerUsuario(params) {
+  return UsuarioService.remove(Number(params && params.id));
 }
 
 function inicializarPlanilha() {
@@ -735,6 +747,45 @@ var ArmarioService = {
 
       return { success: true, numeros: novos };
     });
+  },
+  removeCadastro: function(id) {
+    var cadastroId = toFiniteNumber(id);
+    if (cadastroId === null) {
+      return { success: false, error: 'Identificador do armário inválido.' };
+    }
+
+    return withLock('cadastro_armarios', function() {
+      var sheet = getSheet('Cadastro Armários');
+      var lastRow = sheet.getLastRow();
+      if (lastRow <= 1) {
+        return { success: false, error: 'Nenhum armário cadastrado.' };
+      }
+
+      var valores = sheet.getRange(2, 1, lastRow - 1, 7).getValues();
+      var indice = -1;
+      var registro = null;
+
+      for (var i = 0; i < valores.length; i++) {
+        var rowId = toFiniteNumber(valores[i][0]);
+        if (rowId === cadastroId) {
+          indice = i;
+          registro = valores[i];
+          break;
+        }
+      }
+
+      if (indice === -1) {
+        return { success: false, error: 'Armário não encontrado.' };
+      }
+
+      sheet.deleteRow(indice + 2);
+      clearCache(['CADASTRO_ARMARIOS']);
+
+      var numero = registro ? normalizeText(registro[1]) : '';
+      LogService.register('SISTEMA', 'Remoção Armário Físico', 'Armário ' + (numero || cadastroId) + ' removido do cadastro', '');
+
+      return { success: true, message: 'Armário removido com sucesso.' };
+    });
   }
 };
 
@@ -886,6 +937,45 @@ var UsuarioService = {
       clearCache(['USUARIOS']);
       LogService.register(email, 'Cadastro Usuário', 'Usuário ' + nome + ' cadastrado', '');
       return { success: true, id: novoId };
+    });
+  },
+  remove: function(id) {
+    var usuarioId = toFiniteNumber(id);
+    if (usuarioId === null) {
+      return { success: false, error: 'Identificador do usuário inválido.' };
+    }
+
+    return withLock('usuarios', function() {
+      var sheet = getSheet('Usuários');
+      var lastRow = sheet.getLastRow();
+      if (lastRow <= 1) {
+        return { success: false, error: 'Nenhum usuário cadastrado.' };
+      }
+
+      var valores = sheet.getRange(2, 1, lastRow - 1, 8).getValues();
+      var indice = -1;
+      var registro = null;
+
+      for (var i = 0; i < valores.length; i++) {
+        var rowId = toFiniteNumber(valores[i][0]);
+        if (rowId === usuarioId) {
+          indice = i;
+          registro = valores[i];
+          break;
+        }
+      }
+
+      if (indice === -1) {
+        return { success: false, error: 'Usuário não encontrado.' };
+      }
+
+      sheet.deleteRow(indice + 2);
+      clearCache(['USUARIOS']);
+
+      var nomeRemovido = registro ? normalizeText(registro[1]) : '';
+      LogService.register('SISTEMA', 'Remoção Usuário', 'Usuário ' + (nomeRemovido || usuarioId) + ' removido', '');
+
+      return { success: true, message: 'Usuário removido com sucesso.' };
     });
   }
 };
