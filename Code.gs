@@ -1,1288 +1,1435 @@
-const PLANILHA_CONFIG = [
-  {
-    name: 'Histórico Visitantes',
-    headers: ['ID', 'Data', 'Número Armário', 'Nome Visitante', 'Nome Paciente', 'Leito', 'Volumes', 'Hora Início', 'Hora Fim', 'Status', 'Tipo']
-  },
-  {
-    name: 'Histórico Acompanhantes',
-    headers: ['ID', 'Data', 'Número Armário', 'Nome Acompanhante', 'Nome Paciente', 'Leito', 'Volumes', 'Hora Início', 'Hora Fim', 'Status', 'Tipo']
-  },
-  {
-    name: 'Visitantes',
-    headers: ['ID', 'Número', 'Status', 'Nome Visitante', 'Nome Paciente', 'Leito', 'Volumes', 'Hora Início', 'Hora Prevista', 'Data Registro']
-  },
-  {
-    name: 'Acompanhantes',
-    headers: ['ID', 'Número', 'Status', 'Nome Acompanhante', 'Nome Paciente', 'Leito', 'Volumes', 'Hora Início', 'Data Registro']
-  },
-  {
-    name: 'Cadastro Armários',
-    headers: ['ID', 'Número', 'Tipo', 'Unidade', 'Localização', 'Status', 'Data Cadastro']
-  },
-  {
-    name: 'Unidades',
-    headers: ['ID', 'Nome', 'Status', 'Data Cadastro']
-  },
-  {
-    name: 'Usuários',
-    headers: ['ID', 'Nome', 'Email', 'Perfil', 'Acesso Visitantes', 'Acesso Acompanhantes', 'Data Cadastro', 'Status']
-  },
-  {
-    name: 'LOGS',
-    headers: ['Data/Hora', 'Usuário', 'Ação', 'Detalhes', 'IP']
-  }
-];
-
-const CACHE_SECONDS = 60;
-const LOCK_TIMEOUT = 30000;
-const CACHE_PREFIX = 'ARMARIO_APP_';
-const ESTATISTICA_KEYS = ['visitante', 'acompanhante', 'ambos', 'admin'];
-
-function include(filename) {
-  return HtmlService.createHtmlOutputFromFile(filename).getContent();
-}
-
+// Configuração inicial
 function doGet() {
-  var template = HtmlService.createTemplateFromFile('index');
-  var output = template.evaluate()
+  return HtmlService.createHtmlOutputFromFile('index')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
     .setTitle('Sistema de Armários Hospitalares');
-
-  return output;
 }
 
 function doPost(e) {
   return handlePost(e);
 }
 
-function handlePost(e) {
-  if (!e || !e.parameter) {
-    return respond({ success: false, error: 'Requisição inválida: nenhum parâmetro informado.' });
-  }
+function include(filename) {
+  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+}
 
-  var params = e.parameter;
-  var action = params.action;
+// ID da pasta do Drive para salvar os PDFs - ATUALIZE COM SEU ID
+const PASTA_DRIVE_ID = '1nYsGJJUIufxDYVvIanVXCbPx7YuBOYDP';
 
-  if (!action) {
-    return respond({ success: false, error: 'Ação não informada.' });
-  }
-
+// Inicializar planilha com todas as abas e cabeçalhos
+function inicializarPlanilha() {
   try {
-    switch (action) {
-      case 'getArmarios':
-        return respond(ArmarioService.list(params.tipo));
-      case 'cadastrarArmario':
-        return respond(ArmarioService.create(params));
-      case 'registrarUsoArmario':
-        return respond(ArmarioService.assign(params));
-      case 'liberarArmario':
-        return respond(ArmarioService.release(Number(params.id), params.tipo));
-      case 'getUsuarios':
-        return respond(UsuarioService.list());
-      case 'cadastrarUsuario':
-        return respond(UsuarioService.create(params));
-      case 'removerUsuario':
-        return respond(UsuarioService.remove(Number(params.id)));
-      case 'getLogs':
-        return respond(LogService.list());
-      case 'getNotificacoes':
-        return respond(NotificacaoService.list());
-      case 'getEstatisticas':
-        return respond(EstatisticaService.dashboard(params.tipoUsuario));
-      case 'getHistorico':
-        return respond(HistoricoService.list(params.tipo));
-      case 'getCadastroArmarios':
-        return respond(ArmarioService.listCadastro());
-      case 'cadastrarArmarioFisico':
-        return respond(ArmarioService.createCadastro(params));
-      case 'removerCadastroArmario':
-        return respond(ArmarioService.removeCadastro(Number(params.id)));
-      default:
-        return respond({ success: false, error: 'Ação não reconhecida' });
-    }
-  } catch (error) {
-    LogService.register('ERRO', 'handlePost', error.toString(), '');
-    return respond({ success: false, error: error.toString() });
-  }
-}
-
-function respond(payload) {
-  return ContentService.createTextOutput(JSON.stringify(payload)).setMimeType(ContentService.MimeType.JSON);
-}
-
-function getUnidades() {
-  return { success: true, data: UnidadeService.list() };
-}
-
-function getCadastroArmarios() {
-  return ArmarioService.listCadastro();
-}
-
-function getUsuarios() {
-  return UsuarioService.list();
-}
-
-function getLogs() {
-  return LogService.list();
-}
-
-function getNotificacoes() {
-  return NotificacaoService.list();
-}
-
-function getBootstrapData() {
-  try {
-    var unidades = UnidadeService.list();
-    var cadastroArmarios = ArmarioService.listCadastro();
-    var usuarios = UsuarioService.list();
-    var logs = LogService.list();
-    var notificacoes = NotificacaoService.list();
-    var armariosVisitantes = ArmarioService.list('visitante');
-    var armariosAcompanhantes = ArmarioService.list('acompanhante');
-    var historicoVisitantes = HistoricoService.list('visitante');
-    var historicoAcompanhantes = HistoricoService.list('acompanhante');
-
-    return {
-      success: true,
-      data: {
-        unidades: Array.isArray(unidades) ? unidades : (unidades && unidades.data ? unidades.data : []),
-        cadastroArmarios: cadastroArmarios && Array.isArray(cadastroArmarios.data) ? cadastroArmarios.data : [],
-        usuarios: usuarios && Array.isArray(usuarios.data) ? usuarios.data : [],
-        logs: logs && Array.isArray(logs.data) ? logs.data : [],
-        notificacoes: notificacoes && Array.isArray(notificacoes.data) ? notificacoes.data : [],
-        armariosVisitantes: armariosVisitantes && Array.isArray(armariosVisitantes.data) ? armariosVisitantes.data : [],
-        armariosAcompanhantes: armariosAcompanhantes && Array.isArray(armariosAcompanhantes.data) ? armariosAcompanhantes.data : [],
-        historicoVisitantes: historicoVisitantes && Array.isArray(historicoVisitantes.data) ? historicoVisitantes.data : [],
-        historicoAcompanhantes: historicoAcompanhantes && Array.isArray(historicoAcompanhantes.data) ? historicoAcompanhantes.data : []
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    
+    // Criar abas se não existirem
+    var abas = [
+      { 
+        nome: 'Histórico Visitantes', 
+        cabecalhos: ['ID', 'Data', 'Número Armário', 'Nome Visitante', 'Nome Paciente', 'Leito', 'Volumes', 'Hora Início', 'Hora Fim', 'Status', 'Tipo', 'Unidade'] 
+      },
+      { 
+        nome: 'Histórico Acompanhantes', 
+        cabecalhos: ['ID', 'Data', 'Número Armário', 'Nome Acompanhante', 'Nome Paciente', 'Leito', 'Volumes', 'Hora Início', 'Hora Fim', 'Status', 'Tipo', 'Unidade'] 
+      },
+      { 
+        nome: 'Visitantes', 
+        cabecalhos: ['ID', 'Número', 'Status', 'Nome Visitante', 'Nome Paciente', 'Leito', 'Volumes', 'Hora Início', 'Hora Prevista', 'Data Registro', 'Unidade', 'TermoAplicado'] 
+      },
+      { 
+        nome: 'Acompanhantes', 
+        cabecalhos: ['ID', 'Número', 'Status', 'Nome Acompanhante', 'Nome Paciente', 'Leito', 'Volumes', 'Hora Início', 'Data Registro', 'Unidade', 'TermoAplicado'] 
+      },
+      { 
+        nome: 'Cadastro Armários', 
+        cabecalhos: ['ID', 'Número', 'Tipo', 'Unidade', 'Localização', 'Status', 'Data Cadastro'] 
+      },
+      { 
+        nome: 'Unidades', 
+        cabecalhos: ['ID', 'Nome', 'Status', 'Data Cadastro'] 
+      },
+      { 
+        nome: 'Usuários', 
+        cabecalhos: ['ID', 'Nome', 'Email', 'Perfil', 'Acesso Visitantes', 'Acesso Acompanhantes', 'Data Cadastro', 'Status'] 
+      },
+      { 
+        nome: 'LOGS', 
+        cabecalhos: ['Data/Hora', 'Usuário', 'Ação', 'Detalhes', 'IP'] 
+      },
+      { 
+        nome: 'Termos de Responsabilidade', 
+        cabecalhos: ['ID', 'ArmarioID', 'NumeroArmario', 'Paciente', 'Prontuario', 'Nascimento', 'Setor', 'Leito', 'Consciente', 'Acompanhante', 'Telefone', 'Documento', 'Parentesco', 'Orientacoes', 'Volumes', 'DescricaoVolumes', 'AplicadoEm', 'PDF_URL', 'AssinaturaBase64'] 
+      },
+      { 
+        nome: 'Movimentações', 
+        cabecalhos: ['ID', 'ArmarioID', 'NumeroArmario', 'Tipo', 'Descricao', 'Responsavel', 'Data', 'Hora', 'DataHoraRegistro'] 
       }
-    };
+    ];
+    
+    abas.forEach(function(aba) {
+      var sheet = ss.getSheetByName(aba.nome);
+      if (!sheet) {
+        sheet = ss.insertSheet(aba.nome);
+        sheet.getRange(1, 1, 1, aba.cabecalhos.length).setValues([aba.cabecalhos]);
+        sheet.setFrozenRows(1);
+        
+        // Formatar cabeçalhos
+        var headerRange = sheet.getRange(1, 1, 1, aba.cabecalhos.length);
+        headerRange.setBackground('#2c6e8f')
+          .setFontColor('white')
+          .setFontWeight('bold');
+      }
+    });
+    
+    // Adicionar alguns dados iniciais de exemplo
+    adicionarDadosIniciais();
+    
+    registrarLog('SISTEMA', 'Planilha inicializada com sucesso');
+    return { success: true, message: 'Planilha inicializada com sucesso' };
+    
   } catch (error) {
-    LogService.register('ERRO', 'getBootstrapData', error.toString(), '');
     return { success: false, error: error.toString() };
   }
 }
 
-function getArmarios(params) {
-  return ArmarioService.list(params && params.tipo);
-}
+// Adicionar dados iniciais de exemplo
+function adicionarDadosIniciais() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  
+  // Cadastrar alguns armários físicos
+  var cadastroSheet = ss.getSheetByName('Cadastro Armários');
+  if (cadastroSheet.getLastRow() === 1) {
+    var armariosIniciais = [
+      ['V-01', 'visitante', 'NAC Eletiva', 'Bloco A - Térreo', 'ativo', new Date()],
+      ['V-02', 'visitante', 'NAC Eletiva', 'Bloco A - Térreo', 'ativo', new Date()],
+      ['V-03', 'visitante', 'UIB', 'Bloco A - Térreo', 'ativo', new Date()],
+      ['V-04', 'visitante', 'UIB', 'Bloco A - Térreo', 'ativo', new Date()],
+      ['A-01', 'acompanhante', 'NAC Eletiva', 'Bloco B - 1º Andar', 'ativo', new Date()],
+      ['A-02', 'acompanhante', 'UIB', 'Bloco B - 1º Andar', 'ativo', new Date()],
+      ['A-03', 'acompanhante', 'UIB', 'Bloco B - 1º Andar', 'ativo', new Date()]
+    ];
 
-function cadastrarArmario(params) {
-  return ArmarioService.create(params || {});
-}
-
-function registrarUsoArmario(params) {
-  return ArmarioService.assign(params || {});
-}
-
-function liberarArmario(params) {
-  return ArmarioService.release(Number(params && params.id), params && params.tipo);
-}
-
-function getHistorico(params) {
-  return HistoricoService.list(params && params.tipo);
-}
-
-function getEstatisticas(params) {
-  return EstatisticaService.dashboard(params && params.tipoUsuario);
-}
-
-function cadastrarArmarioFisico(params) {
-  return ArmarioService.createCadastro(params || {});
-}
-
-function removerCadastroArmario(params) {
-  return ArmarioService.removeCadastro(Number(params && params.id));
-}
-
-function cadastrarUsuario(params) {
-  return UsuarioService.create(params || {});
-}
-
-function removerUsuario(params) {
-  return UsuarioService.remove(Number(params && params.id));
-}
-
-function inicializarPlanilha() {
-  return withLock('init', function() {
-    try {
-      ensureSheets();
-      clearCache(['UNIDADES', 'USUARIOS', 'CADASTRO_ARMARIOS', 'ARMARIOS_visitante', 'ARMARIOS_acompanhante']);
-      LogService.register('SISTEMA', 'Inicialização', 'Planilha inicializada com sucesso', '');
-      return { success: true, message: 'Planilha inicializada com sucesso' };
-    } catch (error) {
-      return { success: false, error: error.toString() };
-    }
-  });
-}
-
-function ensureSheets() {
-  var ss = getSpreadsheet();
-  PLANILHA_CONFIG.forEach(function(config) {
-    var sheet = ss.getSheetByName(config.name);
-    if (!sheet) {
-      sheet = ss.insertSheet(config.name);
-    }
-    if (sheet.getLastRow() === 0) {
-      sheet.getRange(1, 1, 1, config.headers.length).setValues([config.headers]);
-      formatHeader(sheet, config.headers.length);
-    }
-    sheet.setFrozenRows(1);
-  });
-}
-
-function getSpreadsheet() {
-  return SpreadsheetApp.getActiveSpreadsheet();
-}
-
-function getSheet(name) {
-  var sheet = getSpreadsheet().getSheetByName(name);
-  if (!sheet) {
-    throw new Error('Aba "' + name + '" não encontrada.');
-  }
-  return sheet;
-}
-
-function formatHeader(sheet, columns) {
-  sheet.getRange(1, 1, 1, columns)
-    .setBackground('#2c6e8f')
-    .setFontColor('#ffffff')
-    .setFontWeight('bold');
-}
-
-function withLock(key, callback) {
-  var lock = LockService.getScriptLock();
-  lock.waitLock(LOCK_TIMEOUT);
-  try {
-    return callback();
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-function withCache(key, callback, seconds) {
-  var cache = CacheService.getScriptCache();
-  var cacheKey = CACHE_PREFIX + key;
-  var cached = cache.get(cacheKey);
-  if (cached) {
-    return JSON.parse(cached);
-  }
-  var result = callback();
-  cache.put(cacheKey, JSON.stringify(result), seconds || CACHE_SECONDS);
-  return result;
-}
-
-function clearCache(keys) {
-  var cache = CacheService.getScriptCache();
-  var resolved = keys.map(function(key) { return CACHE_PREFIX + key; });
-  cache.removeAll(resolved);
-}
-
-function normalizeText(value) {
-  if (value === null || value === undefined) {
-    return '';
-  }
-  return String(value).trim();
-}
-
-function sanitizeNumber(value, fallback) {
-  var parsed = parseInt(value, 10);
-  return isNaN(parsed) ? fallback : parsed;
-}
-
-function toFiniteNumber(value) {
-  var parsed = Number(value);
-  return isNaN(parsed) || !isFinite(parsed) ? null : parsed;
-}
-
-function nextId(collection, property) {
-  var source = collection || [];
-  var ids = source
-    .map(function(item) {
-      var value = property ? item[property] : item;
-      return toFiniteNumber(value);
-    })
-    .filter(function(id) {
-      return id !== null;
+    armariosIniciais.forEach(function(armario, index) {
+      cadastroSheet.getRange(cadastroSheet.getLastRow() + 1, 1, 1, 6)
+        .setValues([[index + 1, ...armario]]);
     });
-  return ids.length ? Math.max.apply(null, ids) + 1 : 1;
+  }
+
+  // Cadastrar usuário admin inicial
+  var usuariosSheet = ss.getSheetByName('Usuários');
+  if (usuariosSheet.getLastRow() === 1) {
+    usuariosSheet.getRange(2, 1, 1, 8)
+      .setValues([[1, 'Administrador', 'admin@hospital.com', 'admin', true, true, new Date(), 'ativo']]);
+  }
+
+  // Cadastrar unidades iniciais
+  var unidadesSheet = ss.getSheetByName('Unidades');
+  if (unidadesSheet && unidadesSheet.getLastRow() === 1) {
+    var unidadesIniciais = [
+      [1, 'NAC Eletiva', 'ativa', new Date()],
+      [2, 'UIB', 'ativa', new Date()]
+    ];
+    unidadesSheet.getRange(2, 1, unidadesIniciais.length, 4).setValues(unidadesIniciais);
+  }
 }
 
-function parseHoraPrevista(value) {
-  var texto = normalizeText(value);
-  if (!texto) {
-    return '';
-  }
-  var partes = texto.split(':');
-  if (partes.length < 2) {
-    return '';
-  }
-  var horas = Number(partes[0]);
-  var minutos = Number(partes[1]);
-  if (isNaN(horas) || isNaN(minutos)) {
-    return '';
-  }
-  var agora = new Date();
-  return new Date(agora.getFullYear(), agora.getMonth(), agora.getDate(), horas, minutos, 0, 0);
-}
-
-function parseDateValue(value) {
-  if (!value) {
-    return null;
-  }
-  if (value instanceof Date) {
-    return isNaN(value.getTime()) ? null : value;
-  }
-  var parsed = new Date(value);
-  return isNaN(parsed.getTime()) ? null : parsed;
-}
-
-function toBoolean(value, defaultValue) {
-  if (value === null || value === undefined || value === '') {
-    return defaultValue === undefined ? false : defaultValue;
-  }
-
-  if (typeof value === 'boolean') {
-    return value;
-  }
-
-  if (typeof value === 'number') {
-    if (value === 1) {
-      return true;
+// Função principal para lidar com requisições POST
+function handlePost(e) {
+  var action = e.parameter.action;
+  
+  try {
+    switch(action) {
+      case 'getArmarios':
+        return ContentService.createTextOutput(JSON.stringify(getArmarios(e.parameter.tipo)))
+          .setMimeType(ContentService.MimeType.JSON);
+      
+      case 'cadastrarArmario':
+        return ContentService.createTextOutput(JSON.stringify(cadastrarArmario(e.parameter)))
+          .setMimeType(ContentService.MimeType.JSON);
+      
+      case 'liberarArmario':
+        return ContentService.createTextOutput(JSON.stringify(liberarArmario(e.parameter.id, e.parameter.tipo)))
+          .setMimeType(ContentService.MimeType.JSON);
+      
+      case 'getUsuarios':
+        return ContentService.createTextOutput(JSON.stringify(getUsuarios()))
+          .setMimeType(ContentService.MimeType.JSON);
+      
+      case 'cadastrarUsuario':
+        return ContentService.createTextOutput(JSON.stringify(cadastrarUsuario(e.parameter)))
+          .setMimeType(ContentService.MimeType.JSON);
+      
+      case 'getLogs':
+        return ContentService.createTextOutput(JSON.stringify(getLogs()))
+          .setMimeType(ContentService.MimeType.JSON);
+      
+      case 'getNotificacoes':
+        return ContentService.createTextOutput(JSON.stringify(getNotificacoes()))
+          .setMimeType(ContentService.MimeType.JSON);
+      
+      case 'getEstatisticas':
+        return ContentService.createTextOutput(JSON.stringify(getEstatisticasDashboard(e.parameter.tipoUsuario)))
+          .setMimeType(ContentService.MimeType.JSON);
+      
+      case 'getHistorico':
+        return ContentService.createTextOutput(JSON.stringify(getHistorico(e.parameter.tipo)))
+          .setMimeType(ContentService.MimeType.JSON);
+      
+      case 'getCadastroArmarios':
+        return ContentService.createTextOutput(JSON.stringify(getCadastroArmarios()))
+          .setMimeType(ContentService.MimeType.JSON);
+      
+      case 'cadastrarArmarioFisico':
+        return ContentService.createTextOutput(JSON.stringify(cadastrarArmarioFisico(e.parameter)))
+          .setMimeType(ContentService.MimeType.JSON);
+      
+      case 'getUnidades':
+        return ContentService.createTextOutput(JSON.stringify(getUnidades()))
+          .setMimeType(ContentService.MimeType.JSON);
+      
+      case 'cadastrarUnidade':
+        return ContentService.createTextOutput(JSON.stringify(cadastrarUnidade(e.parameter)))
+          .setMimeType(ContentService.MimeType.JSON);
+      
+      case 'alternarStatusUnidade':
+        return ContentService.createTextOutput(JSON.stringify(alternarStatusUnidade(e.parameter)))
+          .setMimeType(ContentService.MimeType.JSON);
+      
+      case 'salvarTermoCompleto':
+        return ContentService.createTextOutput(JSON.stringify(salvarTermoCompleto(e.parameter)))
+          .setMimeType(ContentService.MimeType.JSON);
+      
+      case 'getTermo':
+        return ContentService.createTextOutput(JSON.stringify(getTermo(e.parameter)))
+          .setMimeType(ContentService.MimeType.JSON);
+      
+      case 'getMovimentacoes':
+        return ContentService.createTextOutput(JSON.stringify(getMovimentacoes(e.parameter)))
+          .setMimeType(ContentService.MimeType.JSON);
+      
+      case 'salvarMovimentacao':
+        return ContentService.createTextOutput(JSON.stringify(salvarMovimentacao(e.parameter)))
+          .setMimeType(ContentService.MimeType.JSON);
+      
+      case 'verificarInicializacao':
+        return ContentService.createTextOutput(JSON.stringify(verificarInicializacao()))
+          .setMimeType(ContentService.MimeType.JSON);
+      
+      default:
+        return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'Ação não reconhecida: ' + action }))
+          .setMimeType(ContentService.MimeType.JSON);
     }
-    if (value === 0) {
-      return false;
-    }
+  } catch (error) {
+    registrarLog('ERRO', `Erro em handlePost: ${error.toString()}`);
+    return ContentService.createTextOutput(JSON.stringify({ success: false, error: error.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
   }
-
-  if (typeof value === 'string') {
-    var normalized = value.trim().toLowerCase();
-    if (['true', '1', 'sim', 'yes', 'verdadeiro'].indexOf(normalized) !== -1) {
-      return true;
-    }
-    if (['false', '0', 'nao', 'não', 'no', 'falso'].indexOf(normalized) !== -1) {
-      return false;
-    }
-  }
-
-  return Boolean(value);
 }
 
-function timestamp() {
-  return new Date();
-}
-
-var LogService = {
-  register: function(usuario, acao, detalhes, ip) {
-    var sheet = getSheet('LOGS');
-    sheet.appendRow([new Date(), usuario, acao, detalhes, ip || '']);
-    clearCache(['LOGS']);
-  },
-  list: function() {
-    return withCache('LOGS', function() {
-      var sheet = getSheet('LOGS');
-      var lastRow = sheet.getLastRow();
-      if (lastRow <= 1) {
-        return { success: true, data: [] };
+// Funções para Armários
+function getArmarios(tipo) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheetName = tipo === 'acompanhante' ? 'Acompanhantes' : 'Visitantes';
+    var sheet = ss.getSheetByName(sheetName);
+    
+    if (!sheet || sheet.getLastRow() < 2) {
+      return { success: true, data: [] };
+    }
+    
+    var data = sheet.getRange(2, 1, sheet.getLastRow()-1, sheetName === 'Visitantes' ? 12 : 11).getValues();
+    var armarios = [];
+    
+    data.forEach(function(row) {
+      if (row[0]) {
+        var armario = {
+          id: row[0],
+          numero: row[1],
+          status: row[2],
+          nomeVisitante: row[3] || '',
+          nomePaciente: row[4] || '',
+          leito: row[5] || '',
+          volumes: row[6] || 0,
+          horaInicio: row[7] || '',
+          tipo: tipo,
+          unidade: row[10] || '',
+          termoAplicado: row[11] || false
+        };
+        
+        if (tipo === 'visitante') {
+          armario.horaPrevista = row[8] || '';
+          armario.dataRegistro = row[9] || '';
+        } else {
+          armario.dataRegistro = row[8] || '';
+        }
+        
+        armarios.push(armario);
       }
-      var values = sheet.getRange(2, 1, lastRow - 1, 5).getValues();
-      var data = values.map(function(row) {
-        return {
+    });
+    
+    registrarLog('CONSULTA', `Consulta de armários ${tipo} realizada`);
+    return { success: true, data: armarios };
+    
+  } catch (error) {
+    registrarLog('ERRO', `Erro ao buscar armários: ${error.toString()}`);
+    return { success: false, error: error.toString() };
+  }
+}
+
+function cadastrarArmario(armarioData) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheetName = armarioData.tipo === 'acompanhante' ? 'Acompanhantes' : 'Visitantes';
+    var sheet = ss.getSheetByName(sheetName);
+    var historicoSheet = ss.getSheetByName(
+      armarioData.tipo === 'acompanhante' ? 'Histórico Acompanhantes' : 'Histórico Visitantes'
+    );
+    
+    if (!sheet || !historicoSheet) {
+      return { success: false, error: 'Abas não encontradas' };
+    }
+    
+    // Buscar dados do armário físico
+    var cadastroSheet = ss.getSheetByName('Cadastro Armários');
+    var cadastroData = cadastroSheet.getDataRange().getValues();
+    var armarioFisico = null;
+    
+    for (var i = 1; i < cadastroData.length; i++) {
+      if (cadastroData[i][0] == armarioData.id && cadastroData[i][2] === armarioData.tipo) {
+        armarioFisico = cadastroData[i];
+        break;
+      }
+    }
+    
+    if (!armarioFisico) {
+      return { success: false, error: 'Armário físico não encontrado' };
+    }
+    
+    // Verificar se o armário já está em uso
+    var data = sheet.getRange(2, 1, sheet.getLastRow()-1, 3).getValues();
+    var armarioExistente = data.find(row => row[1] === armarioFisico[1] && row[2] !== 'livre');
+    
+    if (armarioExistente) {
+      return { success: false, error: 'Armário já está em uso' };
+    }
+    
+    // Gerar novo ID
+    var lastRow = sheet.getLastRow();
+    var novoId = lastRow > 1 ? Math.max(...sheet.getRange(2, 1, sheet.getLastRow()-1, 1).getValues().flat()) + 1 : 1;
+    
+    // Preparar dados para a aba atual
+    var agora = new Date();
+    var novaLinha = [
+      novoId,
+      armarioFisico[1], // número
+      'em-uso',
+      armarioData.nomeVisitante,
+      armarioData.nomePaciente,
+      armarioData.leito,
+      parseInt(armarioData.volumes),
+      agora.toLocaleTimeString('pt-BR'),
+      agora,
+      armarioFisico[3], // unidade
+      false // termoAplicado
+    ];
+    
+    if (armarioData.tipo === 'visitante') {
+      novaLinha.splice(8, 0, armarioData.horaPrevista);
+    }
+    
+    sheet.getRange(lastRow + 1, 1, 1, novaLinha.length).setValues([novaLinha]);
+    
+    // Registrar no histórico
+    var historicoLastRow = historicoSheet.getLastRow();
+    var historicoId = historicoLastRow > 1 ? Math.max(...historicoSheet.getRange(2, 1, historicoSheet.getLastRow()-1, 1).getValues().flat()) + 1 : 1;
+    
+    var historicoLinha = [
+      historicoId,
+      new Date(),
+      armarioFisico[1],
+      armarioData.nomeVisitante,
+      armarioData.nomePaciente,
+      armarioData.leito,
+      parseInt(armarioData.volumes),
+      agora.toLocaleTimeString('pt-BR'),
+      '', // Hora fim vazia
+      'EM USO',
+      armarioData.tipo,
+      armarioFisico[3] // unidade
+    ];
+    
+    historicoSheet.getRange(historicoLastRow + 1, 1, 1, historicoLinha.length).setValues([historicoLinha]);
+    
+    registrarLog('CADASTRO', `Armário ${armarioFisico[1]} cadastrado para ${armarioData.nomeVisitante}`);
+    
+    return { 
+      success: true, 
+      message: 'Armário cadastrado com sucesso',
+      id: novoId
+    };
+    
+  } catch (error) {
+    registrarLog('ERRO', `Erro ao cadastrar armário: ${error.toString()}`);
+    return { success: false, error: error.toString() };
+  }
+}
+
+function liberarArmario(id, tipo) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheetName = tipo === 'acompanhante' ? 'Acompanhantes' : 'Visitantes';
+    var sheet = ss.getSheetByName(sheetName);
+    var historicoSheet = ss.getSheetByName(
+      tipo === 'acompanhante' ? 'Histórico Acompanhantes' : 'Histórico Visitantes'
+    );
+    
+    if (!sheet || !historicoSheet) {
+      return { success: false, error: 'Abas não encontradas' };
+    }
+    
+    // Encontrar o armário na aba atual
+    var data = sheet.getRange(2, 1, sheet.getLastRow()-1, sheetName === 'Visitantes' ? 12 : 11).getValues();
+    var armarioIndex = -1;
+    var armarioData = null;
+    
+    data.forEach(function(row, index) {
+      if (row[0] == id) {
+        armarioIndex = index;
+        armarioData = row;
+      }
+    });
+    
+    if (armarioIndex === -1) {
+      return { success: false, error: 'Armário não encontrado' };
+    }
+    
+    var linha = armarioIndex + 2;
+    
+    // Limpar dados do armário (deixar apenas número e status livre)
+    var novaLinha = [
+      armarioData[0], // ID
+      armarioData[1], // Número
+      'livre', // Status
+      '', // Nome
+      '', // Paciente
+      '', // Leito
+      '', // Volumes
+      '', // Hora Início
+      new Date() // Data Registro
+    ];
+    
+    if (tipo === 'visitante') {
+      novaLinha.splice(8, 0, ''); // Hora Prevista
+    }
+    
+    novaLinha.push(armarioData[10] || ''); // Unidade
+    novaLinha.push(false); // TermoAplicado
+    
+    sheet.getRange(linha, 1, 1, novaLinha.length).setValues([novaLinha]);
+    
+    // Atualizar histórico - encontrar a entrada mais recente deste armário
+    var historicoData = historicoSheet.getRange(2, 1, historicoSheet.getLastRow()-1, 12).getValues();
+    var historicoIndex = -1;
+    
+    for (var i = historicoData.length - 1; i >= 0; i--) {
+      if (historicoData[i][2] === armarioData[1] && historicoData[i][9] === 'EM USO') {
+        historicoIndex = i;
+        break;
+      }
+    }
+    
+    if (historicoIndex !== -1) {
+      var historicoLinha = historicoIndex + 2;
+      var agora = new Date();
+      historicoSheet.getRange(historicoLinha, 8).setValue(agora.toLocaleTimeString('pt-BR')); // Hora fim
+      historicoSheet.getRange(historicoLinha, 9).setValue('FINALIZADO'); // Status
+    }
+    
+    // Remover termo se existir
+    if (tipo === 'acompanhante') {
+      var termosSheet = ss.getSheetByName('Termos de Responsabilidade');
+      if (termosSheet) {
+        var termosData = termosSheet.getDataRange().getValues();
+        for (var j = 1; j < termosData.length; j++) {
+          if (termosData[j][1] == id) {
+            termosSheet.deleteRow(j + 1);
+            break;
+          }
+        }
+      }
+    }
+    
+    registrarLog('LIBERAÇÃO', `Armário ${armarioData[1]} liberado`);
+    
+    return { success: true, message: 'Armário liberado com sucesso' };
+    
+  } catch (error) {
+    registrarLog('ERRO', `Erro ao liberar armário: ${error.toString()}`);
+    return { success: false, error: error.toString() };
+  }
+}
+
+// Funções para Histórico
+function getHistorico(tipo) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheetName = tipo === 'acompanhante' ? 'Histórico Acompanhantes' : 'Histórico Visitantes';
+    var sheet = ss.getSheetByName(sheetName);
+    
+    if (!sheet || sheet.getLastRow() < 2) {
+      return { success: true, data: [] };
+    }
+    
+    var data = sheet.getRange(2, 1, sheet.getLastRow()-1, 12).getValues();
+    var historico = [];
+    
+    data.forEach(function(row) {
+      if (row[0]) {
+        historico.push({
+          id: row[0],
+          data: row[1],
+          armario: row[2],
+          nome: row[3],
+          paciente: row[4],
+          leito: row[5],
+          volumes: row[6],
+          horaInicio: row[7],
+          horaFim: row[8],
+          status: row[9],
+          tipo: row[10],
+          unidade: row[11]
+        });
+      }
+    });
+    
+    return { success: true, data: historico.reverse() }; // Mais recentes primeiro
+    
+  } catch (error) {
+    registrarLog('ERRO', `Erro ao buscar histórico: ${error.toString()}`);
+    return { success: false, error: error.toString() };
+  }
+}
+
+// Funções para Cadastro de Armários Físicos
+function getCadastroArmarios() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('Cadastro Armários');
+    
+    if (!sheet || sheet.getLastRow() < 2) {
+      return { success: true, data: [] };
+    }
+    
+    var data = sheet.getRange(2, 1, sheet.getLastRow()-1, 7).getValues();
+    var armarios = [];
+    
+    data.forEach(function(row) {
+      if (row[0]) {
+        armarios.push({
+          id: row[0],
+          numero: row[1],
+          tipo: row[2],
+          unidade: row[3],
+          localizacao: row[4],
+          status: row[5],
+          dataCadastro: row[6]
+        });
+      }
+    });
+    
+    return { success: true, data: armarios };
+    
+  } catch (error) {
+    registrarLog('ERRO', `Erro ao buscar cadastro de armários: ${error.toString()}`);
+    return { success: false, error: error.toString() };
+  }
+}
+
+function cadastrarArmarioFisico(armarioData) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('Cadastro Armários');
+    
+    if (!sheet) {
+      return { success: false, error: 'Aba de cadastro não encontrada' };
+    }
+    
+    var totalLinhas = Math.max(sheet.getLastRow()-1, 0);
+    var todosNumeros = totalLinhas > 0 ? sheet.getRange(2, 2, totalLinhas, 1).getValues().flat().filter(String) : [];
+
+    var quantidade = parseInt(armarioData.quantidade || 1, 10);
+    if (isNaN(quantidade) || quantidade < 1) {
+      quantidade = 1;
+    }
+
+    var prefixo = armarioData.prefixo || '';
+    var numeroInicial = parseInt(armarioData.numeroInicial || 1, 10);
+    if (isNaN(numeroInicial) || numeroInicial < 1) {
+      numeroInicial = 1;
+    }
+
+    var novosArmarios = [];
+
+    if (quantidade === 1 && armarioData.numero) {
+      if (todosNumeros.indexOf(armarioData.numero) !== -1) {
+        return { success: false, error: 'Número de armário já existe' };
+      }
+      novosArmarios.push(armarioData.numero);
+    } else {
+      for (var i = 0; i < quantidade; i++) {
+        var numeroGerado = prefixo ? prefixo + '-' + String(numeroInicial + i).padStart(3, '0') : String(numeroInicial + i);
+        if (todosNumeros.indexOf(numeroGerado) !== -1 || novosArmarios.indexOf(numeroGerado) !== -1) {
+          return { success: false, error: 'Não foi possível gerar numeração sem conflitos. Ajuste o prefixo ou número inicial.' };
+        }
+        novosArmarios.push(numeroGerado);
+      }
+    }
+
+    var lastRow = sheet.getLastRow();
+    var ultimoId = lastRow > 1 ? Math.max.apply(null, sheet.getRange(2, 1, sheet.getLastRow()-1, 1).getValues().flat()) : 0;
+
+    var linhas = novosArmarios.map(function(numero, index) {
+      return [
+        ultimoId + index + 1,
+        numero,
+        armarioData.tipo,
+        armarioData.unidade,
+        armarioData.localizacao,
+        'ativo',
+        new Date()
+      ];
+    });
+
+    if (linhas.length > 0) {
+      sheet.getRange(lastRow + 1, 1, linhas.length, 7).setValues(linhas);
+      
+      // Também criar nas abas de uso
+      criarArmariosUso(linhas);
+    }
+
+    registrarLog('CADASTRO', `Armários físicos cadastrados: ${novosArmarios.join(', ')}`);
+
+    return {
+      success: true,
+      message: 'Armários físicos cadastrados com sucesso',
+      ids: linhas.map(function(linha) { return linha[0]; }),
+      numeros: novosArmarios
+    };
+    
+  } catch (error) {
+    registrarLog('ERRO', `Erro ao cadastrar armário físico: ${error.toString()}`);
+    return { success: false, error: error.toString() };
+  }
+}
+
+function criarArmariosUso(armarios) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    
+    armarios.forEach(function(armario) {
+      var sheetName = armario[2] === 'visitante' ? 'Visitantes' : 'Acompanhantes';
+      var sheet = ss.getSheetByName(sheetName);
+      
+      if (sheet) {
+        var lastRow = sheet.getLastRow();
+        var novoId = lastRow > 1 ? Math.max(...sheet.getRange(2, 1, sheet.getLastRow()-1, 1).getValues().flat()) + 1 : 1;
+        
+        var novaLinha = [
+          novoId,
+          armario[1], // número
+          'livre', // status
+          '', // nome
+          '', // paciente
+          '', // leito
+          0, // volumes
+          '', // hora início
+          new Date(), // data registro
+          armario[3], // unidade
+          false // termo aplicado
+        ];
+        
+        if (armario[2] === 'visitante') {
+          novaLinha.splice(8, 0, ''); // hora prevista
+        }
+        
+        sheet.getRange(lastRow + 1, 1, 1, novaLinha.length).setValues([novaLinha]);
+      }
+    });
+    
+  } catch (error) {
+    console.error('Erro ao criar armários de uso:', error);
+  }
+}
+
+// Funções para Unidades
+function getUnidades() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('Unidades');
+    
+    if (!sheet || sheet.getLastRow() < 2) {
+      return { success: true, data: [] };
+    }
+    
+    var data = sheet.getRange(2, 1, sheet.getLastRow()-1, 4).getValues();
+    var unidades = [];
+    
+    data.forEach(function(row) {
+      if (row[0]) {
+        unidades.push({
+          id: row[0],
+          nome: row[1],
+          status: row[2],
+          dataCadastro: row[3]
+        });
+      }
+    });
+    
+    return { success: true, data: unidades };
+    
+  } catch (error) {
+    registrarLog('ERRO', `Erro ao buscar unidades: ${error.toString()}`);
+    return { success: false, error: error.toString() };
+  }
+}
+
+function cadastrarUnidade(dados) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('Unidades');
+    
+    if (!sheet) {
+      return { success: false, error: 'Aba de unidades não encontrada' };
+    }
+    
+    // Verificar se unidade já existe
+    var data = sheet.getRange(2, 1, sheet.getLastRow()-1, 2).getValues();
+    var unidadeExistente = data.find(row => row[1].toLowerCase() === dados.nome.toLowerCase());
+    
+    if (unidadeExistente) {
+      return { success: false, error: 'Unidade já cadastrada' };
+    }
+    
+    var lastRow = sheet.getLastRow();
+    var novoId = lastRow > 1 ? Math.max(...sheet.getRange(2, 1, sheet.getLastRow()-1, 1).getValues().flat()) + 1 : 1;
+    
+    var novaLinha = [
+      novoId,
+      dados.nome,
+      'ativa',
+      new Date()
+    ];
+    
+    sheet.getRange(lastRow + 1, 1, 1, 4).setValues([novaLinha]);
+    
+    registrarLog('CADASTRO UNIDADE', `Unidade ${dados.nome} cadastrada`);
+    
+    return { success: true, message: 'Unidade cadastrada com sucesso', id: novoId };
+    
+  } catch (error) {
+    registrarLog('ERRO', `Erro ao cadastrar unidade: ${error.toString()}`);
+    return { success: false, error: error.toString() };
+  }
+}
+
+function alternarStatusUnidade(dados) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('Unidades');
+    
+    if (!sheet) {
+      return { success: false, error: 'Aba de unidades não encontrada' };
+    }
+    
+    var data = sheet.getDataRange().getValues();
+    var unidadeIndex = -1;
+    
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][1] === dados.nome) {
+        unidadeIndex = i;
+        break;
+      }
+    }
+    
+    if (unidadeIndex === -1) {
+      return { success: false, error: 'Unidade não encontrada' };
+    }
+    
+    var novoSatus = data[unidadeIndex][2] === 'ativa' ? 'inativa' : 'ativa';
+    sheet.getRange(unidadeIndex + 1, 3).setValue(novoSatus);
+    
+    registrarLog('ALTERAÇÃO UNIDADE', `Status da unidade ${dados.nome} alterado para ${novoSatus}`);
+    
+    return { success: true, message: `Unidade ${novoSatus === 'ativa' ? 'ativada' : 'desativada'} com sucesso` };
+    
+  } catch (error) {
+    registrarLog('ERRO', `Erro ao alternar status da unidade: ${error.toString()}`);
+    return { success: false, error: error.toString() };
+  }
+}
+
+// Funções para Termos de Responsabilidade
+function salvarTermoCompleto(dadosTermo) {
+  try {
+    // 1. Gerar e salvar PDF no Drive
+    var resultadoPDF = gerarESalvarTermoPDF(dadosTermo);
+    
+    if (!resultadoPDF.success) {
+      throw new Error('Erro ao gerar PDF: ' + resultadoPDF.error);
+    }
+    
+    // 2. Salvar na aba "Termos de Responsabilidade"
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('Termos de Responsabilidade');
+    
+    if (!sheet) {
+      throw new Error('Aba "Termos de Responsabilidade" não encontrada');
+    }
+    
+    var lastRow = sheet.getLastRow();
+    var novoId = lastRow > 1 ? Math.max(...sheet.getRange(2, 1, sheet.getLastRow()-1, 1).getValues().flat()) + 1 : 1;
+    
+    // Preparar dados para a planilha
+    var novaLinha = [
+      novoId,
+      dadosTermo.armarioId,
+      dadosTermo.numeroArmario,
+      dadosTermo.paciente,
+      dadosTermo.prontuario,
+      dadosTermo.nascimento,
+      dadosTermo.setor,
+      dadosTermo.leito,
+      dadosTermo.consciente,
+      dadosTermo.acompanhante,
+      dadosTermo.telefone || '',
+      dadosTermo.documento || '',
+      dadosTermo.parentesco || '',
+      dadosTermo.orientacoes.join(','),
+      JSON.stringify(dadosTermo.volumes),
+      dadosTermo.descricaoVolumes,
+      new Date(),
+      resultadoPDF.pdfUrl,
+      dadosTermo.assinaturaBase64 || ''
+    ];
+    
+    sheet.getRange(lastRow + 1, 1, 1, novaLinha.length).setValues([novaLinha]);
+    
+    // 3. Atualizar status do armário na aba "Acompanhantes"
+    var sheetAcompanhantes = ss.getSheetByName('Acompanhantes');
+    var dataAcompanhantes = sheetAcompanhantes.getDataRange().getValues();
+    
+    for (var i = 1; i < dataAcompanhantes.length; i++) {
+      if (dataAcompanhantes[i][0] == dadosTermo.armarioId) {
+        // Atualizar volumes e marcar termo como aplicado
+        sheetAcompanhantes.getRange(i + 1, 7).setValue(dadosTermo.volumes.reduce((total, volume) => total + (Number(volume.quantidade) || 0), 0));
+        sheetAcompanhantes.getRange(i + 1, 11).setValue(true); // Termo aplicado
+        break;
+      }
+    }
+    
+    registrarLog('TERMO_APLICADO', `Termo aplicado para armário ${dadosTermo.numeroArmario} - PDF: ${resultadoPDF.pdfUrl}`);
+    
+    return {
+      success: true,
+      message: 'Termo salvo com sucesso e PDF gerado',
+      pdfUrl: resultadoPDF.pdfUrl,
+      termoId: novoId
+    };
+    
+  } catch (error) {
+    registrarLog('ERRO_TERMO', `Erro ao salvar termo: ${error.toString()}`);
+    return { success: false, error: error.toString() };
+  }
+}
+
+function getTermo(dados) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('Termos de Responsabilidade');
+    
+    if (!sheet || sheet.getLastRow() < 2) {
+      return { success: false, error: 'Termo não encontrado' };
+    }
+    
+    var data = sheet.getDataRange().getValues();
+    var termo = null;
+    
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][1] == dados.armarioId) {
+        termo = {
+          id: data[i][0],
+          armarioId: data[i][1],
+          numeroArmario: data[i][2],
+          paciente: data[i][3],
+          prontuario: data[i][4],
+          nascimento: data[i][5],
+          setor: data[i][6],
+          leito: data[i][7],
+          consciente: data[i][8],
+          acompanhante: data[i][9],
+          telefone: data[i][10],
+          documento: data[i][11],
+          parentesco: data[i][12],
+          orientacoes: data[i][13] ? data[i][13].split(',') : [],
+          volumes: data[i][14] ? JSON.parse(data[i][14]) : [],
+          descricaoVolumes: data[i][15],
+          aplicadoEm: data[i][16],
+          pdfUrl: data[i][17],
+          assinaturaBase64: data[i][18]
+        };
+        break;
+      }
+    }
+    
+    if (!termo) {
+      return { success: false, error: 'Termo não encontrado' };
+    }
+    
+    return { success: true, data: termo };
+    
+  } catch (error) {
+    registrarLog('ERRO', `Erro ao buscar termo: ${error.toString()}`);
+    return { success: false, error: error.toString() };
+  }
+}
+
+// Função para gerar e salvar PDF
+function gerarESalvarTermoPDF(dadosTermo) {
+  try {
+    // Acessar a pasta do Drive
+    var pastaDestino;
+    try {
+      pastaDestino = DriveApp.getFolderById(PASTA_DRIVE_ID);
+    } catch (error) {
+      // Se a pasta não for encontrada, criar na raiz
+      pastaDestino = DriveApp.getRootFolder();
+    }
+    
+    // Criar HTML do termo
+    var htmlContent = criarHTMLTermo(dadosTermo);
+    
+    // Criar arquivo temporário como PDF
+    var blob = Utilities.newBlob(htmlContent, 'text/html', 'temp.html')
+      .getAs('application/pdf');
+    
+    // Nome do arquivo
+    var nomeArquivo = 'Termo_Responsabilidade_' + dadosTermo.numeroArmario + '_' + 
+                     Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'ddMMyyyy_HHmmss') + '.pdf';
+    
+    // Salvar na pasta
+    var arquivoPDF = pastaDestino.createFile(blob).setName(nomeArquivo);
+    
+    // Tornar acessível via link
+    arquivoPDF.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    
+    return {
+      success: true,
+      pdfUrl: arquivoPDF.getUrl(),
+      fileId: arquivoPDF.getId()
+    };
+    
+  } catch (error) {
+    console.error('Erro ao gerar PDF:', error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+function criarHTMLTermo(dadosTermo) {
+  var html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <base target="_top">
+        <style>
+            body { 
+                font-family: Arial, sans-serif; 
+                margin: 20px; 
+                line-height: 1.6;
+            }
+            .header { 
+                text-align: center; 
+                border-bottom: 2px solid #333;
+                padding-bottom: 10px;
+                margin-bottom: 20px;
+            }
+            .section { 
+                margin-bottom: 15px; 
+                padding: 10px;
+                border: 1px solid #ddd;
+                border-radius: 5px;
+            }
+            .section-title { 
+                font-weight: bold; 
+                color: #2c6e8f;
+                margin-bottom: 8px;
+            }
+            .assinatura-area {
+                margin-top: 30px;
+                text-align: center;
+            }
+            .assinatura-img {
+                max-width: 300px;
+                border: 1px solid #ccc;
+                margin: 10px 0;
+            }
+            .volumes-list {
+                margin-left: 20px;
+            }
+            .footer {
+                margin-top: 40px;
+                font-size: 0.9em;
+                color: #666;
+                text-align: center;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h2>TERMO DE RESPONSABILIDADE</h2>
+            <h3>Controle de Armários Hospitalares</h3>
+            <p>Armário: ${dadosTermo.numeroArmario}</p>
+        </div>
+
+        <div class="section">
+            <div class="section-title">DADOS DO PACIENTE</div>
+            <p><strong>Nome:</strong> ${dadosTermo.paciente}</p>
+            <p><strong>Prontuário:</strong> ${dadosTermo.prontuario}</p>
+            <p><strong>Data de Nascimento:</strong> ${formatarDataParaHTML(dadosTermo.nascimento)}</p>
+            <p><strong>Setor/Leito:</strong> ${dadosTermo.setor} - ${dadosTermo.leito}</p>
+            <p><strong>Paciente consciente/orientado:</strong> ${dadosTermo.consciente}</p>
+        </div>
+
+        <div class="section">
+            <div class="section-title">RESPONSÁVEL PELO ARMÁRIO</div>
+            <p><strong>Nome:</strong> ${dadosTermo.acompanhante}</p>
+            <p><strong>Telefone:</strong> ${dadosTermo.telefone || 'Não informado'}</p>
+            <p><strong>Documento:</strong> ${dadosTermo.documento || 'Não informado'}</p>
+            <p><strong>Parentesco:</strong> ${dadosTermo.parentesco || 'Não informado'}</p>
+        </div>
+
+        <div class="section">
+            <div class="section-title">VOLUMES ARMAZENADOS</div>
+            <div class="volumes-list">
+  `;
+  
+  // Adicionar volumes
+  if (dadosTermo.volumes && Array.isArray(dadosTermo.volumes)) {
+    dadosTermo.volumes.forEach(function(volume) {
+      html += `<p>${volume.quantidade || 0}x - ${volume.descricao || ''}</p>`;
+    });
+  }
+  
+  html += `
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">DECLARAÇÕES E ORIENTAÇÕES</div>
+            <p>Declaro estar ciente e de acordo com as seguintes orientações:</p>
+            <ul>
+                <li>Seus pertences estão sob sua guarda e responsabilidade</li>
+                <li>Em piora clínica, os pertences serão recolhidos e protocolados no NAC</li>
+                <li>Após 15 dias da alta/transferência, itens não retirados poderão ser descartados conforme normas</li>
+            </ul>
+        </div>
+
+        <div class="assinatura-area">
+            <div class="section-title">ASSINATURA DO RESPONSÁVEL</div>
+  `;
+  
+  // Adicionar assinatura se existir
+  if (dadosTermo.assinaturaBase64) {
+    html += `<img src="data:image/png;base64,${dadosTermo.assinaturaBase64}" class="assinatura-img" />`;
+  } else {
+    html += `<p>Assinatura digital registrada no sistema</p>`;
+  }
+  
+  html += `
+            <p><strong>Nome:</strong> ${dadosTermo.acompanhante}</p>
+            <p><strong>Data/Hora:</strong> ${Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'dd/MM/yyyy HH:mm')}</p>
+        </div>
+
+        <div class="footer">
+            <p>Documento gerado automaticamente em ${Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'dd/MM/yyyy HH:mm')}</p>
+            <p>Hospital Central - Sistema de Controle de Armários</p>
+        </div>
+    </body>
+    </html>
+  `;
+  
+  return html;
+}
+
+function formatarDataParaHTML(data) {
+  if (!data) return 'Não informada';
+  try {
+    var date = new Date(data);
+    return Utilities.formatDate(date, 'America/Sao_Paulo', 'dd/MM/yyyy');
+  } catch (error) {
+    return data;
+  }
+}
+
+// Funções para Movimentações
+function getMovimentacoes(dados) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('Movimentações');
+    
+    if (!sheet || sheet.getLastRow() < 2) {
+      return { success: true, data: [] };
+    }
+    
+    var data = sheet.getDataRange().getValues();
+    var movimentacoes = [];
+    
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][1] == dados.armarioId) {
+        movimentacoes.push({
+          id: data[i][0],
+          armarioId: data[i][1],
+          numeroArmario: data[i][2],
+          tipo: data[i][3],
+          descricao: data[i][4],
+          responsavel: data[i][5],
+          data: data[i][6],
+          hora: data[i][7],
+          dataHoraRegistro: data[i][8]
+        });
+      }
+    }
+    
+    return { success: true, data: movimentacoes };
+    
+  } catch (error) {
+    registrarLog('ERRO', `Erro ao buscar movimentações: ${error.toString()}`);
+    return { success: false, error: error.toString() };
+  }
+}
+
+function salvarMovimentacao(dados) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('Movimentações');
+    
+    if (!sheet) {
+      return { success: false, error: 'Aba de movimentações não encontrada' };
+    }
+    
+    // Buscar número do armário
+    var armarioSheet = ss.getSheetByName('Acompanhantes');
+    var armarioData = armarioSheet.getDataRange().getValues();
+    var numeroArmario = '';
+    
+    for (var i = 1; i < armarioData.length; i++) {
+      if (armarioData[i][0] == dados.armarioId) {
+        numeroArmario = armarioData[i][1];
+        break;
+      }
+    }
+    
+    var lastRow = sheet.getLastRow();
+    var novoId = lastRow > 1 ? Math.max(...sheet.getRange(2, 1, sheet.getLastRow()-1, 1).getValues().flat()) + 1 : 1;
+    
+    var novaLinha = [
+      novoId,
+      dados.armarioId,
+      numeroArmario,
+      dados.tipo,
+      dados.descricao,
+      dados.responsavel,
+      dados.data,
+      dados.hora,
+      new Date()
+    ];
+    
+    sheet.getRange(lastRow + 1, 1, 1, 9).setValues([novaLinha]);
+    
+    registrarLog('MOVIMENTAÇÃO', `Movimentação registrada para armário ${numeroArmario}`);
+    
+    return { success: true, message: 'Movimentação registrada com sucesso', id: novoId };
+    
+  } catch (error) {
+    registrarLog('ERRO', `Erro ao salvar movimentação: ${error.toString()}`);
+    return { success: false, error: error.toString() };
+  }
+}
+
+// Funções para Usuários
+function getUsuarios() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('Usuários');
+    
+    if (!sheet || sheet.getLastRow() < 2) {
+      return { success: true, data: [] };
+    }
+    
+    var data = sheet.getRange(2, 1, sheet.getLastRow()-1, 8).getValues();
+    var usuarios = [];
+    
+    data.forEach(function(row) {
+      if (row[0]) {
+        usuarios.push({
+          id: row[0],
+          nome: row[1],
+          email: row[2],
+          perfil: row[3],
+          acessoVisitantes: row[4],
+          acessoAcompanhantes: row[5],
+          dataCadastro: row[6],
+          status: row[7]
+        });
+      }
+    });
+    
+    return { success: true, data: usuarios };
+    
+  } catch (error) {
+    registrarLog('ERRO', `Erro ao buscar usuários: ${error.toString()}`);
+    return { success: false, error: error.toString() };
+  }
+}
+
+function cadastrarUsuario(usuarioData) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('Usuários');
+    
+    if (!sheet) {
+      return { success: false, error: 'Aba de usuários não encontrada' };
+    }
+    
+    // Verificar se email já existe
+    var data = sheet.getRange(2, 1, sheet.getLastRow()-1, 3).getValues();
+    var usuarioExistente = data.find(row => row[2] === usuarioData.email);
+    
+    if (usuarioExistente) {
+      return { success: false, error: 'Email já cadastrado' };
+    }
+    
+    var lastRow = sheet.getLastRow();
+    var novoId = lastRow > 1 ? Math.max(...sheet.getRange(2, 1, sheet.getLastRow()-1, 1).getValues().flat()) + 1 : 1;
+    
+    var novaLinha = [
+      novoId,
+      usuarioData.nome,
+      usuarioData.email,
+      usuarioData.perfil,
+      usuarioData.acessoVisitantes === 'true',
+      usuarioData.acessoAcompanhantes === 'true',
+      new Date(),
+      'ativo'
+    ];
+    
+    sheet.getRange(lastRow + 1, 1, 1, 8).setValues([novaLinha]);
+    
+    registrarLog('CADASTRO USUÁRIO', `Usuário ${usuarioData.nome} cadastrado`);
+    
+    return { success: true, message: 'Usuário cadastrado com sucesso', id: novoId };
+    
+  } catch (error) {
+    registrarLog('ERRO', `Erro ao cadastrar usuário: ${error.toString()}`);
+    return { success: false, error: error.toString() };
+  }
+}
+
+// Funções para LOGS
+function registrarLog(acao, detalhes) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('LOGS');
+    
+    if (!sheet) {
+      return;
+    }
+    
+    var lastRow = sheet.getLastRow();
+    
+    var novaLinha = [
+      new Date(),
+      Session.getEffectiveUser().getEmail(),
+      acao,
+      detalhes,
+      '' // IP (não disponível no Apps Script)
+    ];
+    
+    sheet.getRange(lastRow + 1, 1, 1, 5).setValues([novaLinha]);
+    
+  } catch (error) {
+    // Não faz nada em caso de erro nos logs
+  }
+}
+
+function getLogs() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('LOGS');
+    
+    if (!sheet || sheet.getLastRow() < 2) {
+      return { success: true, data: [] };
+    }
+    
+    var data = sheet.getRange(2, 1, sheet.getLastRow()-1, 5).getValues();
+    var logs = [];
+    
+    data.forEach(function(row) {
+      if (row[0]) {
+        logs.push({
           dataHora: row[0],
           usuario: row[1],
           acao: row[2],
           detalhes: row[3],
           ip: row[4]
-        };
-      });
-      return { success: true, data: data.reverse() };
+        });
+      }
     });
+    
+    return { success: true, data: logs.reverse() }; // Mais recentes primeiro
+    
+  } catch (error) {
+    return { success: false, error: error.toString() };
   }
-};
-
-var UnidadeService = {
-  list: function() {
-    return withCache('UNIDADES', function() {
-      var sheet = getSheet('Unidades');
-      var lastRow = sheet.getLastRow();
-      if (lastRow <= 1) {
-        return [];
-      }
-      return sheet
-        .getRange(2, 1, lastRow - 1, 4)
-        .getValues()
-        .map(function(row) {
-          var id = toFiniteNumber(row[0]);
-          if (id === null) {
-            return null;
-          }
-          return {
-            id: id,
-            nome: normalizeText(row[1]),
-            status: normalizeText(row[2]),
-            dataCadastro: row[3]
-          };
-        })
-        .filter(function(item) {
-          return item !== null;
-        });
-    });
-  },
-  create: function(nome) {
-    var texto = normalizeText(nome);
-    if (!texto) {
-      return { success: false, error: 'Informe o nome da unidade.' };
-    }
-
-    return withLock('unidades', function() {
-      var sheet = getSheet('Unidades');
-      var unidades = UnidadeService.list();
-      var jaExiste = unidades.some(function(unidade) {
-        return unidade.nome.toLowerCase() === texto.toLowerCase();
-      });
-
-      if (jaExiste) {
-        return { success: false, error: 'Já existe uma unidade com este nome.' };
-      }
-
-      var novoId = nextId(unidades, 'id');
-      sheet.appendRow([novoId, texto, 'ativa', timestamp()]);
-      clearCache(['UNIDADES']);
-      LogService.register('SISTEMA', 'Cadastro Unidade', 'Unidade ' + texto + ' cadastrada', '');
-      return { success: true, id: novoId };
-    });
-  }
-};
-
-var ArmarioService = {
-  list: function(tipo) {
-    var categoria = tipo === 'acompanhante' ? 'Acompanhantes' : 'Visitantes';
-    var cacheKey = 'ARMARIOS_' + (tipo === 'acompanhante' ? 'acompanhante' : 'visitante');
-
-    return withCache(cacheKey, function() {
-      var sheet = getSheet(categoria);
-      var lastRow = sheet.getLastRow();
-      if (lastRow <= 1) {
-        return { success: true, data: [] };
-      }
-
-      var colunas = tipo === 'acompanhante' ? 9 : 10;
-      var values = sheet.getRange(2, 1, lastRow - 1, colunas).getValues();
-      var data = values
-        .map(function(row) {
-          var id = toFiniteNumber(row[0]);
-          if (id === null) {
-            return null;
-          }
-          var volumes = toFiniteNumber(row[6]);
-          var item = {
-            id: id,
-            numero: normalizeText(row[1]),
-            status: normalizeText(row[2]),
-            nomeVisitante: normalizeText(row[3]),
-            nomePaciente: normalizeText(row[4]),
-            leito: normalizeText(row[5]),
-            volumes: volumes !== null ? volumes : 0,
-            horaInicio: normalizeText(row[7]),
-            tipo: tipo || (categoria === 'Acompanhantes' ? 'acompanhante' : 'visitante')
-          };
-          if (tipo !== 'acompanhante') {
-            var horaPrevistaValor = row[8];
-            var dataPrevista = parseDateValue(horaPrevistaValor);
-            if (!dataPrevista && horaPrevistaValor) {
-              var horaConvertida = parseHoraPrevista(horaPrevistaValor);
-              dataPrevista = horaConvertida || null;
-            }
-            item.horaPrevista = dataPrevista ? dataPrevista.toISOString() : normalizeText(horaPrevistaValor);
-          }
-          return item;
-        })
-        .filter(function(item) {
-          return item !== null;
-        });
-
-      return { success: true, data: data };
-    });
-  },
-  create: function(params) {
-    var tipo = params.tipo === 'acompanhante' ? 'acompanhante' : 'visitante';
-    var numero = normalizeText(params.numero);
-    var nomeVisitante = normalizeText(params.nomeVisitante);
-    var nomePaciente = normalizeText(params.nomePaciente);
-    var leito = normalizeText(params.leito);
-    var volumes = sanitizeNumber(params.volumes, 0);
-    if (volumes < 0) {
-      volumes = 0;
-    }
-    var horaPrevista = '';
-    if (tipo === 'visitante') {
-      var horaPrevistaData = parseHoraPrevista(params.horaPrevista);
-      if (!horaPrevistaData) {
-        return { success: false, error: 'Informe um horário previsto válido no formato HH:MM.' };
-      }
-      horaPrevista = horaPrevistaData;
-    }
-
-    if (!numero) {
-      return { success: false, error: 'Informe o número do armário.' };
-    }
-    if (!nomeVisitante) {
-      return { success: false, error: 'Informe o responsável pelo armário.' };
-    }
-    if (!nomePaciente) {
-      return { success: false, error: 'Informe o paciente associado.' };
-    }
-
-    return withLock('armario_' + tipo, function() {
-      var sheet = getSheet(tipo === 'acompanhante' ? 'Acompanhantes' : 'Visitantes');
-      var existing = ArmarioService.list(tipo).data;
-      var emUso = existing.some(function(item) {
-        return item.numero === numero && item.status !== 'livre';
-      });
-      if (emUso) {
-        return { success: false, error: 'Armário já está em uso.' };
-      }
-
-      var novoId = nextId(existing, 'id');
-      var linha = [
-        novoId,
-        numero,
-        'em-uso',
-        nomeVisitante,
-        nomePaciente,
-        leito,
-        volumes,
-        timestamp().toLocaleTimeString('pt-BR'),
-        timestamp()
-      ];
-      if (tipo === 'visitante') {
-        linha.splice(8, 0, horaPrevista);
-      }
-
-      sheet.appendRow(linha);
-
-      HistoricoService.registrar({
-        tipo: tipo,
-        numero: numero,
-        responsavel: nomeVisitante,
-        paciente: nomePaciente,
-        leito: leito,
-        volumes: volumes
-      });
-
-      clearCache([
-        'ARMARIOS_visitante',
-        'ARMARIOS_acompanhante',
-        'HISTORICO_visitante',
-        'HISTORICO_acompanhante',
-        'NOTIFICACOES'
-      ].concat(ESTATISTICA_KEYS.map(function(key) { return 'ESTATISTICAS_' + key; })));
-
-      LogService.register('SISTEMA', 'Cadastro Armário', 'Armário ' + numero + ' vinculado a ' + nomeVisitante, '');
-
-      return {
-        success: true,
-        id: novoId
-      };
-    });
-  },
-  assign: function(params) {
-    var tipo = params.tipo === 'acompanhante' ? 'acompanhante' : 'visitante';
-    var numero = normalizeText(params.numero);
-    var nomeVisitante = normalizeText(params.nomeVisitante || params.responsavel);
-    var nomePaciente = normalizeText(params.nomePaciente || params.paciente);
-    var leito = normalizeText(params.leito);
-    var volumes = sanitizeNumber(params.volumes, 0);
-    if (volumes < 0) {
-      volumes = 0;
-    }
-    var idParam = toFiniteNumber(params.id);
-    var previsao = '';
-
-    if (!numero) {
-      return { success: false, error: 'Informe o número do armário.' };
-    }
-    if (!nomeVisitante) {
-      return { success: false, error: 'Informe o responsável pelo armário.' };
-    }
-    if (!nomePaciente) {
-      return { success: false, error: 'Informe o paciente associado.' };
-    }
-
-    if (tipo === 'visitante') {
-      var origemPrevisao = params.previsaoRetirada || params.horaPrevista;
-      var dataPrevista = parseDateValue(origemPrevisao);
-      if (!dataPrevista) {
-        dataPrevista = parseHoraPrevista(origemPrevisao);
-      }
-      previsao = dataPrevista || '';
-    }
-
-    return withLock('armario_assign_' + tipo, function() {
-      var sheetName = tipo === 'acompanhante' ? 'Acompanhantes' : 'Visitantes';
-      var sheet = getSheet(sheetName);
-      var lastRow = sheet.getLastRow();
-      if (lastRow <= 1) {
-        return { success: false, error: 'Nenhum armário cadastrado.' };
-      }
-
-      var colunas = tipo === 'acompanhante' ? 9 : 10;
-      var values = sheet.getRange(2, 1, lastRow - 1, colunas).getValues();
-      var linhaIndex = -1;
-      var linhaAtual = null;
-      var idEncontrado = idParam;
-
-      values.some(function(row, index) {
-        var rowId = toFiniteNumber(row[0]);
-        var rowNumero = normalizeText(row[1]);
-        if ((idParam !== null && rowId === idParam) || (idParam === null && rowNumero === numero)) {
-          linhaIndex = index + 2;
-          linhaAtual = row;
-          if (rowId !== null) {
-            idEncontrado = rowId;
-          }
-          return true;
-        }
-        return false;
-      });
-
-      if (linhaIndex === -1) {
-        return { success: false, error: 'Armário não encontrado.' };
-      }
-
-      var statusAnterior = normalizeText(linhaAtual[2]).toLowerCase();
-      var agora = timestamp();
-      var horaInicio = agora.toLocaleTimeString('pt-BR');
-      var dataRegistro = agora;
-      var novaLinha = [
-        idEncontrado,
-        numero,
-        'em-uso',
-        nomeVisitante,
-        nomePaciente,
-        leito,
-        volumes,
-        horaInicio
-      ];
-
-      if (tipo === 'visitante') {
-        novaLinha.push(previsao || '');
-      }
-
-      novaLinha.push(dataRegistro);
-
-      sheet.getRange(linhaIndex, 1, 1, novaLinha.length).setValues([novaLinha]);
-
-      if (statusAnterior !== 'em-uso') {
-        HistoricoService.registrar({
-          tipo: tipo,
-          numero: numero,
-          responsavel: nomeVisitante,
-          paciente: nomePaciente,
-          leito: leito,
-          volumes: volumes
-        });
-      }
-
-      clearCache([
-        'ARMARIOS_visitante',
-        'ARMARIOS_acompanhante',
-        'HISTORICO_visitante',
-        'HISTORICO_acompanhante',
-        'NOTIFICACOES'
-      ].concat(ESTATISTICA_KEYS.map(function(key) { return 'ESTATISTICAS_' + key; })));
-
-      LogService.register('SISTEMA', 'Registro Armário', 'Armário ' + numero + ' atualizado via dashboard', '');
-
-      return {
-        success: true,
-        id: idEncontrado
-      };
-    });
-  },
-  release: function(id, tipo) {
-    var sheetName = tipo === 'acompanhante' ? 'Acompanhantes' : 'Visitantes';
-    return withLock('armario_release_' + sheetName, function() {
-      var sheet = getSheet(sheetName);
-      var lastRow = sheet.getLastRow();
-      if (lastRow <= 1) {
-        return { success: false, error: 'Nenhum armário cadastrado.' };
-      }
-
-      var colunas = tipo === 'acompanhante' ? 9 : 10;
-      var values = sheet.getRange(2, 1, lastRow - 1, colunas).getValues();
-      var linhaIndex = -1;
-      var dadosArmario = null;
-
-      values.forEach(function(row, index) {
-        if (row[0] === id) {
-          linhaIndex = index + 2;
-          dadosArmario = row;
-        }
-      });
-
-      if (linhaIndex === -1) {
-        return { success: false, error: 'Armário não encontrado.' };
-      }
-
-      var novaLinha = [id, dadosArmario[1], 'livre', '', '', '', 0, '', timestamp()];
-      if (tipo !== 'acompanhante') {
-        novaLinha.splice(8, 0, '');
-      }
-
-      sheet.getRange(linhaIndex, 1, 1, novaLinha.length).setValues([novaLinha]);
-
-      HistoricoService.finalizar(dadosArmario[1], tipo);
-
-      clearCache([
-        'ARMARIOS_visitante',
-        'ARMARIOS_acompanhante',
-        'HISTORICO_visitante',
-        'HISTORICO_acompanhante',
-        'NOTIFICACOES'
-      ].concat(ESTATISTICA_KEYS.map(function(key) { return 'ESTATISTICAS_' + key; })));
-
-      LogService.register('SISTEMA', 'Liberação Armário', 'Armário ' + dadosArmario[1] + ' liberado', '');
-      return { success: true, message: 'Armário liberado com sucesso' };
-    });
-  },
-  listCadastro: function() {
-    return withCache('CADASTRO_ARMARIOS', function() {
-      var sheet = getSheet('Cadastro Armários');
-      var lastRow = sheet.getLastRow();
-      if (lastRow <= 1) {
-        return { success: true, data: [] };
-      }
-      var values = sheet.getRange(2, 1, lastRow - 1, 7).getValues();
-      var data = values
-        .map(function(row) {
-          var id = toFiniteNumber(row[0]);
-          if (id === null) {
-            return null;
-          }
-          return {
-            id: id,
-            numero: normalizeText(row[1]),
-            tipo: normalizeText(row[2]),
-            unidade: normalizeText(row[3]),
-            localizacao: normalizeText(row[4]),
-            status: normalizeText(row[5]),
-            dataCadastro: row[6]
-          };
-        })
-        .filter(function(item) {
-          return item !== null;
-        });
-      return { success: true, data: data };
-    });
-  },
-  createCadastro: function(params) {
-    var tipo = params && params.tipo === 'acompanhante' ? 'acompanhante' : 'visitante';
-    var metodo = params && params.metodo === 'intervalo' ? 'intervalo' : (params && params.metodo === 'unico' ? 'unico' : 'sequencia');
-    var quantidade = sanitizeNumber(params && params.quantidade, 1);
-    var sequenciaInicial = sanitizeNumber(params && params.sequenciaInicial, 1);
-    var intervaloInicio = sanitizeNumber(params && params.intervaloInicio, NaN);
-    var intervaloFim = sanitizeNumber(params && params.intervaloFim, NaN);
-    var prefixo = normalizeText(params && params.prefixo);
-    var separador = params && params.separador !== undefined ? String(params.separador) : '-';
-    var zeroPad = sanitizeNumber(params && params.zeroPad, 0);
-    var unidade = normalizeText((params && params.unidade) || '');
-    var localizacao = normalizeText((params && params.localizacao) || '');
-    var numeroInformado = normalizeText(params && params.numero);
-    var MAX_ARMARIOS_POR_LOTE = 500;
-
-    if (zeroPad < 0) {
-      zeroPad = 0;
-    }
-    if (zeroPad > 6) {
-      zeroPad = 6;
-    }
-
-    return withLock('cadastro_armarios', function() {
-      var sheet = getSheet('Cadastro Armários');
-      var cadastro = ArmarioService.listCadastro().data;
-      var numerosExistentes = cadastro.map(function(item) { return item.numero; });
-      var existentesSet = {};
-      numerosExistentes.forEach(function(numero) {
-        existentesSet[numero] = true;
-      });
-
-      var sheetUso = getSheet(tipo === 'acompanhante' ? 'Acompanhantes' : 'Visitantes');
-      var colunasUso = tipo === 'acompanhante' ? 9 : 10;
-      var lastRowUso = sheetUso.getLastRow();
-      var numerosUsoExistentes = {};
-      var proximoIdUso = 1;
-
-      if (lastRowUso > 1) {
-        var valoresUso = sheetUso.getRange(2, 1, lastRowUso - 1, colunasUso).getValues();
-        var maiorIdUso = 0;
-        valoresUso.forEach(function(row) {
-          var idAtual = toFiniteNumber(row[0]);
-          if (idAtual !== null && idAtual > maiorIdUso) {
-            maiorIdUso = idAtual;
-          }
-          var numeroAtual = normalizeText(row[1]);
-          if (numeroAtual) {
-            numerosUsoExistentes[numeroAtual] = true;
-          }
-        });
-        proximoIdUso = maiorIdUso + 1;
-      }
-
-      var novos = [];
-      var novosSet = {};
-
-      function montarNumero(valor) {
-        var numeroBase = '';
-        if (typeof valor === 'number' && !isNaN(valor)) {
-          var numeroNumerico = Number(valor);
-          var sinal = numeroNumerico < 0 ? '-' : '';
-          if (zeroPad > 0) {
-            numeroBase = sinal + String(Math.abs(numeroNumerico)).padStart(zeroPad, '0');
-          } else {
-            numeroBase = String(numeroNumerico);
-          }
-        } else {
-          numeroBase = String(valor);
-        }
-
-        if (prefixo) {
-          return prefixo + (separador ? separador : '') + numeroBase;
-        }
-        return numeroBase;
-      }
-
-      function registrarNumero(numero) {
-        if (!numero) {
-          throw new Error('Número de armário inválido.');
-        }
-        if (existentesSet[numero] || novosSet[numero]) {
-          throw new Error('Não foi possível gerar numeração sem conflitos. Ajuste o prefixo, número ou intervalo informado.');
-        }
-        novosSet[numero] = true;
-        novos.push(numero);
-      }
-
-      var linhasUsoNovas = [];
-
-      try {
-        if (metodo === 'unico') {
-          if (!numeroInformado) {
-            throw new Error('Informe o número do armário que deseja cadastrar.');
-          }
-          registrarNumero(numeroInformado);
-        } else if (metodo === 'intervalo') {
-          if (isNaN(intervaloInicio) || isNaN(intervaloFim)) {
-            throw new Error('Informe números válidos para o intervalo.');
-          }
-          if (intervaloFim < intervaloInicio) {
-            throw new Error('O final do intervalo deve ser maior ou igual ao início.');
-          }
-          var totalIntervalo = intervaloFim - intervaloInicio + 1;
-          if (totalIntervalo > MAX_ARMARIOS_POR_LOTE) {
-            throw new Error('Cadastre no máximo ' + MAX_ARMARIOS_POR_LOTE + ' armários por vez.');
-          }
-          for (var valor = intervaloInicio; valor <= intervaloFim; valor++) {
-            registrarNumero(montarNumero(valor));
-          }
-        } else {
-          // sequencia automática
-          if (quantidade <= 0) {
-            throw new Error('Informe uma quantidade válida de armários.');
-          }
-          if (quantidade > MAX_ARMARIOS_POR_LOTE) {
-            throw new Error('Cadastre no máximo ' + MAX_ARMARIOS_POR_LOTE + ' armários por vez.');
-          }
-          if (sequenciaInicial <= 0 || isNaN(sequenciaInicial)) {
-            throw new Error('Informe um número inicial válido para a sequência.');
-          }
-          for (var i = 0; i < quantidade; i++) {
-            registrarNumero(montarNumero(sequenciaInicial + i));
-          }
-        }
-      } catch (erro) {
-        return { success: false, error: erro.message };
-      }
-
-      if (!novos.length) {
-        return { success: false, error: 'Nenhum armário foi gerado para cadastro.' };
-      }
-
-      var baseId = nextId(cadastro, 'id') - 1;
-      novos.forEach(function(numero, index) {
-        sheet.appendRow([
-          baseId + index + 1,
-          numero,
-          tipo,
-          unidade || 'NAC Eletiva',
-          localizacao || 'Não informado',
-          'ativo',
-          timestamp()
-        ]);
-        if (!numerosUsoExistentes[numero]) {
-          if (tipo === 'acompanhante') {
-            linhasUsoNovas.push([
-              proximoIdUso,
-              numero,
-              'livre',
-              '',
-              '',
-              '',
-              0,
-              '',
-              timestamp()
-            ]);
-          } else {
-            linhasUsoNovas.push([
-              proximoIdUso,
-              numero,
-              'livre',
-              '',
-              '',
-              '',
-              0,
-              '',
-              '',
-              timestamp()
-            ]);
-          }
-          numerosUsoExistentes[numero] = true;
-          proximoIdUso += 1;
-        }
-      });
-
-      if (linhasUsoNovas.length) {
-        var inicioUso = lastRowUso > 0 ? lastRowUso + 1 : 2;
-        sheetUso
-          .getRange(inicioUso, 1, linhasUsoNovas.length, colunasUso)
-          .setValues(linhasUsoNovas);
-        lastRowUso = inicioUso + linhasUsoNovas.length - 1;
-      }
-
-      clearCache([
-        'CADASTRO_ARMARIOS',
-        tipo === 'acompanhante' ? 'ARMARIOS_acompanhante' : 'ARMARIOS_visitante'
-      ].concat(ESTATISTICA_KEYS.map(function(key) {
-        return 'ESTATISTICAS_' + key;
-      })));
-      LogService.register('SISTEMA', 'Cadastro Armário Físico', 'Armários cadastrados: ' + novos.join(', '), '');
-
-      return { success: true, numeros: novos };
-    });
-  },
-  removeCadastro: function(id) {
-    var cadastroId = toFiniteNumber(id);
-    if (cadastroId === null) {
-      return { success: false, error: 'Identificador do armário inválido.' };
-    }
-
-    return withLock('cadastro_armarios', function() {
-      var sheet = getSheet('Cadastro Armários');
-      var lastRow = sheet.getLastRow();
-      if (lastRow <= 1) {
-        return { success: false, error: 'Nenhum armário cadastrado.' };
-      }
-
-      var valores = sheet.getRange(2, 1, lastRow - 1, 7).getValues();
-      var indice = -1;
-      var registro = null;
-
-      for (var i = 0; i < valores.length; i++) {
-        var rowId = toFiniteNumber(valores[i][0]);
-        if (rowId === cadastroId) {
-          indice = i;
-          registro = valores[i];
-          break;
-        }
-      }
-
-      if (indice === -1) {
-        return { success: false, error: 'Armário não encontrado.' };
-      }
-
-      sheet.deleteRow(indice + 2);
-      clearCache(['CADASTRO_ARMARIOS']);
-
-      var numero = registro ? normalizeText(registro[1]) : '';
-      LogService.register('SISTEMA', 'Remoção Armário Físico', 'Armário ' + (numero || cadastroId) + ' removido do cadastro', '');
-
-      return { success: true, message: 'Armário removido com sucesso.' };
-    });
-  }
-};
-
-var HistoricoService = {
-  list: function(tipo) {
-    var sheetName = tipo === 'acompanhante' ? 'Histórico Acompanhantes' : 'Histórico Visitantes';
-    var cacheKey = 'HISTORICO_' + (tipo === 'acompanhante' ? 'acompanhante' : 'visitante');
-
-    return withCache(cacheKey, function() {
-      var sheet = getSheet(sheetName);
-      var lastRow = sheet.getLastRow();
-      if (lastRow <= 1) {
-        return { success: true, data: [] };
-      }
-      var values = sheet.getRange(2, 1, lastRow - 1, 11).getValues();
-      var data = values
-        .map(function(row) {
-          var id = toFiniteNumber(row[0]);
-          if (id === null) {
-            return null;
-          }
-          var volumes = toFiniteNumber(row[6]);
-          return {
-            id: id,
-            data: row[1],
-            armario: normalizeText(row[2]),
-            nome: normalizeText(row[3]),
-            paciente: normalizeText(row[4]),
-            leito: normalizeText(row[5]),
-            volumes: volumes !== null ? volumes : 0,
-            horaInicio: normalizeText(row[7]),
-            horaFim: normalizeText(row[8]),
-            status: normalizeText(row[9]),
-            tipo: normalizeText(row[10])
-          };
-        })
-        .filter(function(item) {
-          return item !== null;
-        });
-      return { success: true, data: data.reverse() };
-    });
-  },
-  registrar: function(dados) {
-    var sheetName = dados.tipo === 'acompanhante' ? 'Histórico Acompanhantes' : 'Histórico Visitantes';
-    var sheet = getSheet(sheetName);
-    var historico = HistoricoService.list(dados.tipo).data;
-    var novoId = nextId(historico, 'id');
-    sheet.appendRow([
-      novoId,
-      timestamp(),
-      dados.numero,
-      dados.responsavel,
-      dados.paciente,
-      dados.leito,
-      dados.volumes,
-      timestamp().toLocaleTimeString('pt-BR'),
-      '',
-      'EM USO',
-      dados.tipo
-    ]);
-    clearCache(['HISTORICO_visitante', 'HISTORICO_acompanhante']);
-  },
-  finalizar: function(numero, tipo) {
-    var sheetName = tipo === 'acompanhante' ? 'Histórico Acompanhantes' : 'Histórico Visitantes';
-    var sheet = getSheet(sheetName);
-    var lastRow = sheet.getLastRow();
-    if (lastRow <= 1) {
-      return;
-    }
-    var values = sheet.getRange(2, 1, lastRow - 1, 11).getValues();
-    for (var i = values.length - 1; i >= 0; i--) {
-      if (values[i][2] === numero && values[i][9] === 'EM USO') {
-        sheet.getRange(i + 2, 9).setValue(timestamp().toLocaleTimeString('pt-BR'));
-        sheet.getRange(i + 2, 10).setValue('FINALIZADO');
-        clearCache(['HISTORICO_visitante', 'HISTORICO_acompanhante']);
-        return;
-      }
-    }
-  }
-};
-
-var UsuarioService = {
-  list: function() {
-    return withCache('USUARIOS', function() {
-      var sheet = getSheet('Usuários');
-      var lastRow = sheet.getLastRow();
-      if (lastRow <= 1) {
-        return { success: true, data: [] };
-      }
-      var values = sheet.getRange(2, 1, lastRow - 1, 8).getValues();
-      var data = values
-        .map(function(row) {
-          var id = toFiniteNumber(row[0]);
-          if (id === null) {
-            return null;
-          }
-          return {
-            id: id,
-            nome: normalizeText(row[1]),
-            email: normalizeText(row[2]),
-            perfil: normalizeText(row[3]) || 'usuario',
-            acessoVisitantes: toBoolean(row[4], false),
-            acessoAcompanhantes: toBoolean(row[5], false),
-            dataCadastro: row[6],
-            status: normalizeText(row[7])
-          };
-        })
-        .filter(function(item) {
-          return item !== null;
-        });
-      return { success: true, data: data };
-    });
-  },
-  create: function(params) {
-    var nome = normalizeText(params.nome);
-    var email = normalizeText(params.email);
-    var perfil = params.perfil === 'admin' ? 'admin' : 'usuario';
-    var acessoVisitantes = toBoolean(params.acessoVisitantes, true);
-    var acessoAcompanhantes = toBoolean(params.acessoAcompanhantes, true);
-
-    if (!nome) {
-      return { success: false, error: 'Informe o nome do usuário.' };
-    }
-    if (!email) {
-      return { success: false, error: 'Informe o email do usuário.' };
-    }
-
-    return withLock('usuarios', function() {
-      var usuarios = UsuarioService.list().data;
-      var existe = usuarios.some(function(usuario) {
-        return usuario.email.toLowerCase() === email.toLowerCase();
-      });
-      if (existe) {
-        return { success: false, error: 'Já existe um usuário com este email.' };
-      }
-
-      var sheet = getSheet('Usuários');
-      var novoId = nextId(usuarios, 'id');
-      sheet.appendRow([
-        novoId,
-        nome,
-        email,
-        perfil,
-        acessoVisitantes,
-        acessoAcompanhantes,
-        timestamp(),
-        'ativo'
-      ]);
-      clearCache(['USUARIOS']);
-      LogService.register(email, 'Cadastro Usuário', 'Usuário ' + nome + ' cadastrado', '');
-      return { success: true, id: novoId };
-    });
-  },
-  remove: function(id) {
-    var usuarioId = toFiniteNumber(id);
-    if (usuarioId === null) {
-      return { success: false, error: 'Identificador do usuário inválido.' };
-    }
-
-    return withLock('usuarios', function() {
-      var sheet = getSheet('Usuários');
-      var lastRow = sheet.getLastRow();
-      if (lastRow <= 1) {
-        return { success: false, error: 'Nenhum usuário cadastrado.' };
-      }
-
-      var valores = sheet.getRange(2, 1, lastRow - 1, 8).getValues();
-      var indice = -1;
-      var registro = null;
-
-      for (var i = 0; i < valores.length; i++) {
-        var rowId = toFiniteNumber(valores[i][0]);
-        if (rowId === usuarioId) {
-          indice = i;
-          registro = valores[i];
-          break;
-        }
-      }
-
-      if (indice === -1) {
-        return { success: false, error: 'Usuário não encontrado.' };
-      }
-
-      sheet.deleteRow(indice + 2);
-      clearCache(['USUARIOS']);
-
-      var nomeRemovido = registro ? normalizeText(registro[1]) : '';
-      LogService.register('SISTEMA', 'Remoção Usuário', 'Usuário ' + (nomeRemovido || usuarioId) + ' removido', '');
-
-      return { success: true, message: 'Usuário removido com sucesso.' };
-    });
-  }
-};
-
-var NotificacaoService = {
-  list: function() {
-    return withCache('NOTIFICACOES', function() {
-      var agora = new Date();
-      var notificacoes = [];
-      ['visitante', 'acompanhante'].forEach(function(tipo) {
-        var armarios = ArmarioService.list(tipo).data;
-        armarios.forEach(function(armario) {
+}
+
+// Funções para notificações
+function getNotificacoes() {
+  try {
+    var agora = new Date();
+    var notificacoes = [];
+    
+    // Verificar armários vencidos e próximos do vencimento
+    var tipos = ['visitante', 'acompanhante'];
+    
+    tipos.forEach(function(tipo) {
+      var armarios = getArmarios(tipo);
+      if (armarios.success) {
+        armarios.data.forEach(function(armario) {
           if (armario.status === 'em-uso' && armario.horaPrevista) {
-            var horaPrevista = parseDateValue(armario.horaPrevista);
-            if (!horaPrevista) {
-              return;
-            }
-            var diff = (horaPrevista.getTime() - agora.getTime()) / (1000 * 60);
-            if (diff <= 0) {
-              notificacoes.push({
-                tipo: 'danger',
-                titulo: 'Armário ' + armario.numero + ' vencido',
-                tempo: 'Expirou há ' + Math.abs(Math.round(diff)) + ' minutos'
-              });
-            } else if (diff <= 10) {
-              notificacoes.push({
-                tipo: 'warning',
-                titulo: 'Armário ' + armario.numero + ' próximo do horário',
-                tempo: 'Vencerá em ' + Math.round(diff) + ' minutos'
-              });
+            try {
+              // Converter hora prevista para objeto Date
+              var hoje = new Date().toISOString().split('T')[0];
+              var horaPrevista = new Date(hoje + 'T' + armario.horaPrevista + ':00');
+              var diferencaMinutos = (horaPrevista - agora) / (1000 * 60);
+              
+              if (diferencaMinutos < 0) {
+                // Vencido
+                notificacoes.push({
+                  tipo: 'danger',
+                  titulo: `Armário ${armario.numero} vencido`,
+                  mensagem: `O armário está vencido desde ${Math.abs(Math.round(diferencaMinutos))} minutos`,
+                  armarioId: armario.id,
+                  armarioTipo: tipo,
+                  timestamp: new Date()
+                });
+              } else if (diferencaMinutos <= 10) {
+                // Próximo do vencimento (10 minutos ou menos)
+                notificacoes.push({
+                  tipo: 'warning', 
+                  titulo: `Armário ${armario.numero} próximo do horário`,
+                  mensagem: `O armário vencerá em ${Math.round(diferencaMinutos)} minutos`,
+                  armarioId: armario.id,
+                  armarioTipo: tipo,
+                  timestamp: new Date()
+                });
+              }
+            } catch (e) {
+              // Ignora erro de parsing de data
             }
           }
         });
-      });
-      return { success: true, data: notificacoes };
-    });
-  }
-};
-
-var EstatisticaService = {
-  dashboard: function(tipoUsuario) {
-    return withCache('ESTATISTICAS_' + (tipoUsuario || 'admin'), function() {
-      var tipos = [];
-      if (tipoUsuario === 'visitante') {
-        tipos = ['visitante'];
-      } else if (tipoUsuario === 'acompanhante') {
-        tipos = ['acompanhante'];
-      } else if (tipoUsuario === 'ambos' || tipoUsuario === 'admin') {
-        tipos = ['visitante', 'acompanhante'];
-      } else {
-        tipos = ['visitante'];
       }
+    });
+    
+    return { success: true, data: notificacoes };
+    
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
 
-      var estatisticas = { livres: 0, emUso: 0, proximo: 0, vencidos: 0 };
-      var agora = new Date();
-
-      tipos.forEach(function(tipo) {
-        ArmarioService.list(tipo).data.forEach(function(armario) {
+// Função para obter estatísticas do dashboard
+function getEstatisticasDashboard(tipoUsuario) {
+  try {
+    var estatisticas = {
+      livres: 0,
+      emUso: 0,
+      proximo: 0,
+      vencidos: 0
+    };
+    
+    var tipos = [];
+    
+    // Definir quais tipos de armário o usuário pode ver
+    if (tipoUsuario === 'admin' || tipoUsuario === 'ambos') {
+      tipos = ['visitante', 'acompanhante'];
+    } else if (tipoUsuario === 'visitante') {
+      tipos = ['visitante'];
+    } else if (tipoUsuario === 'acompanhante') {
+      tipos = ['acompanhante'];
+    }
+    
+    var agora = new Date();
+    
+    tipos.forEach(function(tipo) {
+      var armarios = getArmarios(tipo);
+      if (armarios.success) {
+        armarios.data.forEach(function(armario) {
           if (armario.status === 'livre') {
-            estatisticas.livres += 1;
-            return;
-          }
-          if (armario.status === 'em-uso') {
+            estatisticas.livres++;
+          } else if (armario.status === 'em-uso') {
             if (armario.horaPrevista) {
-              var horaPrevista = parseDateValue(armario.horaPrevista);
-              if (horaPrevista) {
-                var diff = (horaPrevista.getTime() - agora.getTime()) / (1000 * 60);
-                if (diff < 0) {
-                  estatisticas.vencidos += 1;
-                } else if (diff <= 10) {
-                  estatisticas.proximo += 1;
+              try {
+                var hoje = new Date().toISOString().split('T')[0];
+                var horaPrevista = new Date(hoje + 'T' + armario.horaPrevista + ':00');
+                var diferencaMinutos = (horaPrevista - agora) / (1000 * 60);
+                
+                if (diferencaMinutos < 0) {
+                  estatisticas.vencidos++;
+                } else if (diferencaMinutos <= 10) {
+                  estatisticas.proximo++;
                 } else {
-                  estatisticas.emUso += 1;
+                  estatisticas.emUso++;
                 }
-              } else {
-                estatisticas.emUso += 1;
+              } catch (e) {
+                estatisticas.emUso++;
               }
             } else {
-              estatisticas.emUso += 1;
+              estatisticas.emUso++;
             }
           }
         });
-      });
-
-      return { success: true, data: estatisticas };
+      }
     });
+    
+    return { success: true, data: estatisticas };
+    
+  } catch (error) {
+    return { success: false, error: error.toString() };
   }
-};
+}
+
+// Função para verificar se o sistema está inicializado
+function verificarInicializacao() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var abas = [
+    'Histórico Visitantes', 
+    'Histórico Acompanhantes', 
+    'Visitantes', 
+    'Acompanhantes', 
+    'Cadastro Armários', 
+    'Unidades', 
+    'Usuários', 
+    'LOGS',
+    'Termos de Responsabilidade',
+    'Movimentações'
+  ];
+  
+  for (var i = 0; i < abas.length; i++) {
+    if (!ss.getSheetByName(abas[i])) {
+      return { success: true, inicializado: false };
+    }
+  }
+  
+  return { success: true, inicializado: true };
+}
