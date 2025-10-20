@@ -4,14 +4,19 @@
 
   const MockBackend = (() => {
     const bootstrap = {
-      unidades: [],
+      unidades: [
+        { id: 1, nome: 'NAC Eletiva', status: 'ativa', dataCadastro: new Date().toISOString() }
+      ],
       armarios: [],
       termos: {},
       movimentacoes: {},
       historico: [],
       usuarios: [],
       logs: [],
-      cadastroArmarios: [],
+      cadastroArmarios: [
+        { id: 1, numero: '001', tipo: 'visitante', unidade: 'NAC Eletiva', localizacao: '1º Andar', status: 'ativo' },
+        { id: 2, numero: 'A01', tipo: 'acompanhante', unidade: 'NAC Eletiva', localizacao: '1º Andar', status: 'ativo' }
+      ],
       notificacoes: []
     };
 
@@ -39,23 +44,78 @@
       }
 
       try {
-        const [unidadesRes, cadastroRes, usuariosRes, logsRes, notificacoesRes] = await Promise.all([
+        const [
+          unidadesRes,
+          cadastroRes,
+          usuariosRes,
+          logsRes,
+          notificacoesRes,
+          armariosVisitantesRes,
+          armariosAcompanhantesRes,
+          historicoVisitantesRes,
+          historicoAcompanhantesRes
+        ] = await Promise.all([
           executar('getUnidades'),
           executar('getCadastroArmarios'),
           executar('getUsuarios'),
           executar('getLogs'),
-          executar('getNotificacoes')
+          executar('getNotificacoes'),
+          executar('getArmarios', { tipo: 'visitante' }),
+          executar('getArmarios', { tipo: 'acompanhante' }),
+          executar('getHistorico', { tipo: 'visitante' }),
+          executar('getHistorico', { tipo: 'acompanhante' })
         ]);
+
+        const cadastroLista = cadastroRes.data || [];
+        const cadastroPorNumero = cadastroLista.reduce((acc, item) => {
+          acc[item.numero] = item;
+          return acc;
+        }, {});
+
+        const normalizarArmarios = (resposta, tipoPadrao) => {
+          if (!resposta || !resposta.success) {
+            return [];
+          }
+          return (resposta.data || []).map((item) => {
+            const cadastro = cadastroPorNumero[item.numero] || {};
+            return {
+              ...item,
+              tipo: item.tipo || tipoPadrao,
+              unidade: item.unidade || cadastro.unidade || '',
+              localizacao: item.localizacao || cadastro.localizacao || ''
+            };
+          });
+        };
+
+        const normalizarHistorico = (resposta, tipoPadrao) => {
+          if (!resposta || !resposta.success) {
+            return [];
+          }
+          return (resposta.data || []).map((item) => ({
+            ...item,
+            tipo: item.tipo || tipoPadrao
+          }));
+        };
+
+        const armarios = [
+          ...normalizarArmarios(armariosVisitantesRes, 'visitante'),
+          ...normalizarArmarios(armariosAcompanhantesRes, 'acompanhante')
+        ];
+
+        const historico = [
+          ...normalizarHistorico(historicoVisitantesRes, 'visitante'),
+          ...normalizarHistorico(historicoAcompanhantesRes, 'acompanhante')
+        ];
 
         return {
           unidades: unidadesRes.data || [],
-          armarios: [],
+          armarios,
           termos: {},
           movimentacoes: {},
-          historico: [],
+          historico,
           usuarios: usuariosRes.data || [],
           logs: logsRes.data || [],
-          cadastroArmarios: cadastroRes.data || [],
+          cadastroArmarios: cadastroLista,
           notificacoes: notificacoesRes.data || []
         };
       } catch (error) {
@@ -139,6 +199,7 @@
       tabelaUsuariosBody: document.querySelector('#tabela-usuarios tbody'),
       tabelaLogsBody: document.querySelector('#tabela-logs tbody'),
       tabelaTermosBody: document.querySelector('#tabela-termos tbody'),
+      armarioNumero: document.getElementById('armario-numero'),
       btnNovoVisitante: document.getElementById('btn-novo-visitante'),
       btnNovoAcompanhante: document.getElementById('btn-novo-acompanhante'),
       btnNovoArmario: document.getElementById('btn-novo-armario'),
@@ -147,6 +208,7 @@
       armarioModal: document.getElementById('armario-modal'),
       armarioForm: document.getElementById('armario-form'),
       armarioModalClose: document.getElementById('modal-close'),
+      btnSalvarArmario: document.getElementById('btn-salvar'),
       btnCancelarArmario: document.getElementById('btn-cancelar'),
       usuarioModal: document.getElementById('usuario-modal'),
       usuarioForm: document.getElementById('usuario-form'),
@@ -411,9 +473,9 @@
   }
 
   function bindForms() {
-    Elements.armarioForm?.addEventListener('submit', (event) => {
+    Elements.armarioForm?.addEventListener('submit', async (event) => {
       event.preventDefault();
-      salvarArmario();
+      await salvarArmario();
     });
 
     Elements.usuarioForm?.addEventListener('submit', (event) => {
@@ -704,6 +766,75 @@
     Elements.termoOrientacoes.appendChild(field);
   }
 
+  function obterArmariosDisponiveis(tipo) {
+    const cadastro = AppState.get('cadastroArmarios') || [];
+    const armariosAtuais = AppState.get('armarios') || [];
+    const ocupados = new Set(
+      armariosAtuais
+        .filter((armario) => armario.status === 'em-uso')
+        .map((armario) => armario.numero)
+    );
+
+    const livresPlanilha = armariosAtuais
+      .filter((armario) => armario.tipo === tipo && armario.status === 'livre' && armario.numero)
+      .map((armario) => ({
+        numero: armario.numero,
+        tipo: armario.tipo,
+        unidade: armario.unidade || '',
+        localizacao: armario.localizacao || ''
+      }));
+
+    const disponiveisCadastro = cadastro
+      .filter((item) => item.tipo === tipo && item.status !== 'inativo' && !ocupados.has(item.numero))
+      .map((item) => ({
+        numero: item.numero,
+        tipo: item.tipo,
+        unidade: item.unidade || '',
+        localizacao: item.localizacao || ''
+      }));
+
+    const mapa = new Map();
+    livresPlanilha.concat(disponiveisCadastro).forEach((item) => {
+      if (!mapa.has(item.numero)) {
+        mapa.set(item.numero, item);
+      }
+    });
+
+    return Array.from(mapa.values()).sort((a, b) => String(a.numero).localeCompare(String(b.numero)));
+  }
+
+  function preencherSelectArmario(tipo) {
+    if (!Elements.armarioNumero) {
+      return;
+    }
+
+    const disponiveis = obterArmariosDisponiveis(tipo);
+    Elements.armarioNumero.innerHTML = '';
+
+    if (!disponiveis.length) {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = 'Nenhum armário disponível';
+      Elements.armarioNumero.appendChild(option);
+      Elements.armarioNumero.disabled = true;
+      return;
+    }
+
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = 'Selecione um armário disponível';
+    Elements.armarioNumero.appendChild(placeholder);
+
+    disponiveis.forEach((item) => {
+      const option = document.createElement('option');
+      option.value = item.numero;
+      option.textContent = `${item.numero} — ${item.unidade || 'Unidade não informada'}`;
+      Elements.armarioNumero.appendChild(option);
+    });
+
+    Elements.armarioNumero.disabled = false;
+  }
+
   function abrirModalArmario(tipo) {
     if (!Elements.armarioForm) {
       return;
@@ -711,38 +842,165 @@
 
     Elements.armarioForm.reset();
     Elements.armarioForm.dataset.tipo = tipo;
+    preencherSelectArmario(tipo);
     const horaPrevistaGroup = document.getElementById('hora-prevista-group');
     if (horaPrevistaGroup) {
       horaPrevistaGroup.style.display = tipo === 'visitante' ? 'flex' : 'none';
     }
+    const horaPrevistaInput = document.getElementById('hora-prevista');
+    if (horaPrevistaInput) {
+      horaPrevistaInput.required = tipo === 'visitante';
+      if (tipo !== 'visitante') {
+        horaPrevistaInput.value = '';
+      }
+    }
     abrirModal(Elements.armarioModal);
   }
 
-  function salvarArmario() {
+  async function salvarArmario() {
     const dados = new FormData(Elements.armarioForm);
     const tipo = Elements.armarioForm.dataset.tipo || 'visitante';
-    const armarios = AppState.get('armarios');
-    const novoId = armarios.length ? Math.max(...armarios.map((armario) => armario.id)) + 1 : 1;
+    const numero = dados.get('numero');
 
-    armarios.push({
-      id: novoId,
-      numero: `TEMP-${String(novoId).padStart(3, '0')}`,
-      status: 'em-uso',
+    if (!numero) {
+      Swal.fire('Selecione um armário', 'Escolha um armário disponível para prosseguir.', 'warning');
+      return;
+    }
+
+    const finalizarLoading = iniciarLoadingBotao(Elements.btnSalvarArmario);
+
+    const payload = {
       tipo,
-      unidade: AppState.get('unidadeAtual') === 'todas' ? 'NAC Eletiva' : AppState.get('unidadeAtual'),
+      numero,
       nomeVisitante: dados.get('nomeVisitante'),
       nomePaciente: dados.get('nomePaciente'),
       leito: dados.get('leito'),
-      volumes: Number(dados.get('volumes')) || 0,
-      horaInicio: new Date().toLocaleTimeString('pt-BR'),
-      horaPrevista: tipo === 'visitante' ? dados.get('horaPrevista') : undefined,
-      termoAplicado: false
-    });
+      volumes: dados.get('volumes'),
+      horaPrevista: tipo === 'visitante' ? dados.get('horaPrevista') : ''
+    };
 
-    AppState.set('armarios', armarios);
-    fecharModal(Elements.armarioModal);
-    atualizarInterface();
-    carregarDadosTabelas();
+    try {
+      if (hasAppsScript) {
+        const resposta = await ApiClient.call('cadastrarArmario', payload);
+        if (!resposta || !resposta.success) {
+          throw new Error((resposta && resposta.error) || 'Não foi possível cadastrar o armário.');
+        }
+        fecharModal(Elements.armarioModal);
+        await sincronizarArmarios();
+        await sincronizarHistorico();
+        atualizarInterface();
+        carregarDadosTabelas();
+        Swal.fire('Sucesso', 'Armário cadastrado com sucesso.', 'success');
+        return;
+      }
+
+      const armarios = AppState.get('armarios');
+      const novoId = armarios.length ? Math.max(...armarios.map((armario) => armario.id)) + 1 : 1;
+      armarios.push({
+        id: novoId,
+        numero,
+        status: 'em-uso',
+        tipo,
+        unidade: AppState.get('unidadeAtual') === 'todas' ? 'NAC Eletiva' : AppState.get('unidadeAtual'),
+        nomeVisitante: dados.get('nomeVisitante'),
+        nomePaciente: dados.get('nomePaciente'),
+        leito: dados.get('leito'),
+        volumes: Number(dados.get('volumes')) || 0,
+        horaInicio: new Date().toLocaleTimeString('pt-BR'),
+        horaPrevista: tipo === 'visitante' ? dados.get('horaPrevista') : undefined,
+        termoAplicado: false
+      });
+      AppState.set('armarios', armarios);
+      fecharModal(Elements.armarioModal);
+      atualizarInterface();
+      carregarDadosTabelas();
+      Swal.fire('Sucesso', 'Armário cadastrado com sucesso.', 'success');
+    } catch (error) {
+      console.error('Erro ao cadastrar armário', error);
+      Swal.fire('Erro', error.message || 'Não foi possível cadastrar o armário.', 'error');
+    } finally {
+      finalizarLoading();
+    }
+  }
+
+  async function sincronizarArmarios() {
+    if (!hasAppsScript) {
+      return;
+    }
+
+    try {
+      const [visitantesRes, acompanhantesRes, notificacoesRes] = await Promise.all([
+        ApiClient.call('getArmarios', { tipo: 'visitante' }),
+        ApiClient.call('getArmarios', { tipo: 'acompanhante' }),
+        ApiClient.call('getNotificacoes')
+      ]);
+
+      const cadastro = AppState.get('cadastroArmarios') || [];
+      const cadastroPorNumero = cadastro.reduce((acc, item) => {
+        acc[item.numero] = item;
+        return acc;
+      }, {});
+
+      const normalizar = (resposta, tipoPadrao) => {
+        if (!resposta || !resposta.success) {
+          return [];
+        }
+        return (resposta.data || []).map((item) => {
+          const cadastroInfo = cadastroPorNumero[item.numero] || {};
+          return {
+            ...item,
+            tipo: item.tipo || tipoPadrao,
+            unidade: item.unidade || cadastroInfo.unidade || '',
+            localizacao: item.localizacao || cadastroInfo.localizacao || ''
+          };
+        });
+      };
+
+      const armarios = [
+        ...normalizar(visitantesRes, 'visitante'),
+        ...normalizar(acompanhantesRes, 'acompanhante')
+      ];
+
+      AppState.set('armarios', armarios);
+
+      if (notificacoesRes && notificacoesRes.success) {
+        AppState.set('notificacoes', notificacoesRes.data || []);
+      }
+    } catch (error) {
+      console.error('Erro ao sincronizar armários', error);
+    }
+  }
+
+  async function sincronizarHistorico() {
+    if (!hasAppsScript) {
+      return;
+    }
+
+    try {
+      const [visitantesRes, acompanhantesRes] = await Promise.all([
+        ApiClient.call('getHistorico', { tipo: 'visitante' }),
+        ApiClient.call('getHistorico', { tipo: 'acompanhante' })
+      ]);
+
+      const normalizar = (resposta, tipoPadrao) => {
+        if (!resposta || !resposta.success) {
+          return [];
+        }
+        return (resposta.data || []).map((item) => ({
+          ...item,
+          tipo: item.tipo || tipoPadrao
+        }));
+      };
+
+      const historico = [
+        ...normalizar(visitantesRes, 'visitante'),
+        ...normalizar(acompanhantesRes, 'acompanhante')
+      ];
+
+      AppState.set('historico', historico);
+    } catch (error) {
+      console.error('Erro ao sincronizar histórico', error);
+    }
   }
 
   function salvarUsuario() {
@@ -1382,30 +1640,49 @@
     liberacaoArmarioAtual = null;
   }
 
-  function confirmarLiberacao() {
+  async function confirmarLiberacao(event) {
     if (!liberacaoArmarioAtual) {
       return;
     }
 
-    const armarios = AppState.get('armarios').map((armario) => {
-      if (armario.id === liberacaoArmarioAtual.id) {
-        return {
-          ...armario,
-          status: 'livre',
-          nomeVisitante: '',
-          nomePaciente: '',
-          leito: '',
-          volumes: 0,
-          termoAplicado: false
-        };
-      }
-      return armario;
-    });
+    const finalizarLoading = iniciarLoadingBotao(event?.currentTarget || Elements.liberacaoBtnConfirmar);
 
-    AppState.set('armarios', armarios);
-    fecharModalLiberacao();
-    atualizarInterface();
-    carregarDadosTabelas();
+    try {
+      if (hasAppsScript) {
+        const resposta = await ApiClient.call('liberarArmario', liberacaoArmarioAtual);
+        if (!resposta || !resposta.success) {
+          throw new Error((resposta && resposta.error) || 'Não foi possível liberar o armário.');
+        }
+        await sincronizarArmarios();
+        await sincronizarHistorico();
+      } else {
+        const armarios = AppState.get('armarios').map((armario) => {
+          if (armario.id === liberacaoArmarioAtual.id) {
+            return {
+              ...armario,
+              status: 'livre',
+              nomeVisitante: '',
+              nomePaciente: '',
+              leito: '',
+              volumes: 0,
+              termoAplicado: false
+            };
+          }
+          return armario;
+        });
+        AppState.set('armarios', armarios);
+      }
+
+      fecharModalLiberacao();
+      atualizarInterface();
+      carregarDadosTabelas();
+      Swal.fire('Sucesso', 'Armário liberado com sucesso.', 'success');
+    } catch (error) {
+      console.error('Erro ao liberar armário', error);
+      Swal.fire('Erro', error.message || 'Não foi possível liberar o armário.', 'error');
+    } finally {
+      finalizarLoading();
+    }
   }
 
   function carregarDadosTabelas() {
@@ -1455,17 +1732,15 @@
     }
 
     const historico = AppState.get('historico') || [];
-    const filtrado = historico.filter((registro) =>
-      tipo === 'visitante' ? Boolean(registro.visitante) : Boolean(registro.acompanhante)
-    );
+    const filtrado = historico.filter((registro) => registro.tipo === tipo);
 
     tbody.innerHTML = filtrado
       .map(
         (item) => `
           <tr>
-            <td>${item.data}</td>
-            <td>${item.armario}</td>
-            <td>${item.visitante || item.acompanhante || '-'}</td>
+            <td>${item.data || '-'}</td>
+            <td>${item.armario || '-'}</td>
+            <td>${item.nome || '-'}</td>
             <td>${item.paciente || '-'}</td>
             <td>${item.leito || '-'}</td>
             <td>${item.volumes || '-'}</td>
@@ -1613,6 +1888,11 @@
         cadastroArmarios: remoto.cadastroArmarios && remoto.cadastroArmarios.length ? remoto.cadastroArmarios : fallback.cadastroArmarios,
         notificacoes: remoto.notificacoes && remoto.notificacoes.length ? remoto.notificacoes : fallback.notificacoes
       });
+
+      if (hasAppsScript) {
+        await sincronizarArmarios();
+        await sincronizarHistorico();
+      }
 
       atualizarInterface();
       carregarDadosTabelas();
