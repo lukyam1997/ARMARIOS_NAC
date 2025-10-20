@@ -213,6 +213,7 @@
       usuarioModal: document.getElementById('usuario-modal'),
       usuarioForm: document.getElementById('usuario-form'),
       usuarioModalClose: document.getElementById('usuario-modal-close'),
+      usuarioBtnSalvar: document.getElementById('usuario-btn-salvar'),
       usuarioBtnCancelar: document.getElementById('usuario-btn-cancelar'),
       termoModal: document.getElementById('termo-modal'),
       termoModalClose: document.getElementById('termo-modal-close'),
@@ -478,9 +479,9 @@
       await salvarArmario();
     });
 
-    Elements.usuarioForm?.addEventListener('submit', (event) => {
+    Elements.usuarioForm?.addEventListener('submit', async (event) => {
       event.preventDefault();
-      salvarUsuario();
+      await salvarUsuario(event);
     });
 
     Elements.movimentacaoForm?.addEventListener('submit', (event) => {
@@ -1003,23 +1004,66 @@
     }
   }
 
-  function salvarUsuario() {
+  async function salvarUsuario(event) {
+    if (!Elements.usuarioForm) {
+      return;
+    }
+
     const dados = new FormData(Elements.usuarioForm);
-    const usuarios = AppState.get('usuarios');
-    const novoId = usuarios.length ? Math.max(...usuarios.map((usuario) => usuario.id)) + 1 : 1;
+    const nome = (dados.get('nome') || '').trim();
+    const email = (dados.get('email') || '').trim();
+    const perfil = dados.get('perfil') || 'usuario';
+    const acessoVisitantes = document.getElementById('acesso-visitantes')?.checked ?? true;
+    const acessoAcompanhantes = document.getElementById('acesso-acompanhantes')?.checked ?? true;
 
-    usuarios.push({
-      id: novoId,
-      nome: dados.get('nome'),
-      email: dados.get('email'),
-      perfil: dados.get('perfil'),
-      acessoVisitantes: document.getElementById('acesso-visitantes').checked,
-      acessoAcompanhantes: document.getElementById('acesso-acompanhantes').checked
-    });
+    if (!nome || !email) {
+      Swal.fire('Atenção', 'Informe o nome e o email do usuário.', 'warning');
+      return;
+    }
 
-    AppState.set('usuarios', usuarios);
-    fecharModal(Elements.usuarioModal);
-    carregarDadosTabelas();
+    const finalizarLoading = iniciarLoadingBotao(event?.submitter || Elements.usuarioBtnSalvar);
+
+    try {
+      if (hasAppsScript) {
+        const resposta = await ApiClient.call('cadastrarUsuario', {
+          nome,
+          email,
+          perfil,
+          acessoVisitantes,
+          acessoAcompanhantes
+        });
+
+        if (!resposta || !resposta.success) {
+          throw new Error(resposta?.error || 'Não foi possível salvar o usuário.');
+        }
+
+        const usuariosRes = await ApiClient.call('getUsuarios');
+        const usuariosAtualizados = usuariosRes?.data || [];
+        AppState.set('usuarios', usuariosAtualizados);
+      } else {
+        const usuarios = AppState.get('usuarios') || [];
+        const novoId = usuarios.length ? Math.max(...usuarios.map((usuario) => usuario.id)) + 1 : 1;
+        usuarios.push({
+          id: novoId,
+          nome,
+          email,
+          perfil,
+          acessoVisitantes,
+          acessoAcompanhantes
+        });
+        AppState.set('usuarios', usuarios);
+      }
+
+      Elements.usuarioForm.reset();
+      fecharModal(Elements.usuarioModal);
+      carregarDadosTabelas();
+      Swal.fire('Sucesso', 'Usuário salvo com sucesso.', 'success');
+    } catch (error) {
+      console.error('Erro ao salvar usuário', error);
+      Swal.fire('Erro', error.message || 'Não foi possível salvar o usuário.', 'error');
+    } finally {
+      finalizarLoading();
+    }
   }
 
   function salvarMovimentacao() {

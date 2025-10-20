@@ -231,6 +231,37 @@ function sanitizeNumber(value, fallback) {
   return isNaN(parsed) ? fallback : parsed;
 }
 
+function toBoolean(value, defaultValue) {
+  if (value === null || value === undefined || value === '') {
+    return defaultValue === undefined ? false : defaultValue;
+  }
+
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  if (typeof value === 'number') {
+    if (value === 1) {
+      return true;
+    }
+    if (value === 0) {
+      return false;
+    }
+  }
+
+  if (typeof value === 'string') {
+    var normalized = value.trim().toLowerCase();
+    if (['true', '1', 'sim', 'yes', 'verdadeiro'].indexOf(normalized) !== -1) {
+      return true;
+    }
+    if (['false', '0', 'nao', 'não', 'no', 'falso'].indexOf(normalized) !== -1) {
+      return false;
+    }
+  }
+
+  return Boolean(value);
+}
+
 function timestamp() {
   return new Date();
 }
@@ -697,8 +728,8 @@ var UsuarioService = {
           nome: row[1],
           email: row[2],
           perfil: row[3],
-          acessoVisitantes: Boolean(row[4]),
-          acessoAcompanhantes: Boolean(row[5]),
+          acessoVisitantes: toBoolean(row[4], false),
+          acessoAcompanhantes: toBoolean(row[5], false),
           dataCadastro: row[6],
           status: row[7]
         };
@@ -710,8 +741,8 @@ var UsuarioService = {
     var nome = normalizeText(params.nome);
     var email = normalizeText(params.email);
     var perfil = params.perfil === 'admin' ? 'admin' : 'usuario';
-    var acessoVisitantes = params.acessoVisitantes === 'false' ? false : true;
-    var acessoAcompanhantes = params.acessoAcompanhantes === 'false' ? false : true;
+    var acessoVisitantes = toBoolean(params.acessoVisitantes, true);
+    var acessoAcompanhantes = toBoolean(params.acessoAcompanhantes, true);
 
     if (!nome) {
       return { success: false, error: 'Informe o nome do usuário.' };
