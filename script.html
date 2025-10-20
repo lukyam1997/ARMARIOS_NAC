@@ -397,6 +397,18 @@
       armarioModalClose: document.getElementById('modal-close'),
       btnSalvarArmario: document.getElementById('btn-salvar'),
       btnCancelarArmario: document.getElementById('btn-cancelar'),
+      registroArmarioModal: document.getElementById('registro-armario-modal'),
+      registroArmarioModalClose: document.getElementById('registro-armario-modal-close'),
+      registroArmarioTitulo: document.getElementById('registro-armario-titulo'),
+      registroArmarioForm: document.getElementById('registro-armario-form'),
+      registroArmarioCancelar: document.getElementById('registro-armario-cancelar'),
+      registroArmarioId: document.getElementById('registro-armario-id'),
+      registroArmarioNomeVisitante: document.getElementById('registro-nome-visitante'),
+      registroArmarioTelefone: document.getElementById('registro-telefone'),
+      registroArmarioPaciente: document.getElementById('registro-paciente'),
+      registroArmarioLeito: document.getElementById('registro-leito'),
+      registroArmarioVolumes: document.getElementById('registro-volumes'),
+      registroArmarioPrevisao: document.getElementById('registro-previsao'),
       usuarioModal: document.getElementById('usuario-modal'),
       usuarioForm: document.getElementById('usuario-form'),
       usuarioModalClose: document.getElementById('usuario-modal-close'),
@@ -440,6 +452,7 @@
 
   let termoPassoAtual = 0;
   let termoArmarioAtual = null;
+  let registroArmarioAtual = null;
   let movimentacaoArmarioAtual = null;
   let liberacaoArmarioAtual = null;
   let assinaturaDesenhada = false;
@@ -494,6 +507,162 @@
   function fecharModal(modal) {
     if (modal) {
       modal.classList.remove('modal--visible');
+    }
+  }
+
+  function formatDateTimeLocalValue(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+      return '';
+    }
+
+    const pad = (value) => String(value).padStart(2, '0');
+    const year = date.getFullYear();
+    const month = pad(date.getMonth() + 1);
+    const day = pad(date.getDate());
+    const hours = pad(date.getHours());
+    const minutes = pad(date.getMinutes());
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  }
+
+  function resetRegistroArmarioForm() {
+    if (Elements.registroArmarioForm && typeof Elements.registroArmarioForm.reset === 'function') {
+      Elements.registroArmarioForm.reset();
+    }
+
+    if (Elements.registroArmarioId) {
+      Elements.registroArmarioId.value = '';
+    }
+  }
+
+  function fecharModalRegistroArmario() {
+    registroArmarioAtual = null;
+    resetRegistroArmarioForm();
+    fecharModal(Elements.registroArmarioModal);
+  }
+
+  function abrirModalRegistroArmario(armario) {
+    if (!armario || !Elements.registroArmarioModal) {
+      return;
+    }
+
+    registroArmarioAtual = armario;
+    resetRegistroArmarioForm();
+
+    if (Elements.registroArmarioTitulo) {
+      const numero = armario.numero ? String(armario.numero).trim() : '';
+      Elements.registroArmarioTitulo.textContent = numero
+        ? `Registrar – Armário ${numero}`
+        : 'Registrar – Armário';
+    }
+
+    if (Elements.registroArmarioId) {
+      Elements.registroArmarioId.value = armario.id ?? '';
+    }
+
+    if (Elements.registroArmarioNomeVisitante && armario.nomeVisitante) {
+      Elements.registroArmarioNomeVisitante.value = armario.nomeVisitante;
+    }
+
+    if (Elements.registroArmarioTelefone && armario.telefone) {
+      Elements.registroArmarioTelefone.value = armario.telefone;
+    }
+
+    if (Elements.registroArmarioPaciente && armario.nomePaciente) {
+      Elements.registroArmarioPaciente.value = armario.nomePaciente;
+    }
+
+    if (Elements.registroArmarioLeito && armario.leito) {
+      Elements.registroArmarioLeito.value = armario.leito;
+    }
+
+    if (Elements.registroArmarioVolumes && armario.volumes) {
+      Elements.registroArmarioVolumes.value = armario.volumes;
+    }
+
+    if (Elements.registroArmarioPrevisao) {
+      const dataPrevista = Sanitizer.parseDateValue(armario.horaPrevista || armario.previsaoRetirada);
+      Elements.registroArmarioPrevisao.value = dataPrevista ? formatDateTimeLocalValue(dataPrevista) : '';
+    }
+
+    abrirModal(Elements.registroArmarioModal);
+
+    if (Elements.registroArmarioNomeVisitante) {
+      requestAnimationFrame(() => Elements.registroArmarioNomeVisitante.focus());
+    }
+  }
+
+  async function salvarRegistroArmarioDashboard() {
+    if (!Elements.registroArmarioForm || !registroArmarioAtual) {
+      return;
+    }
+
+    const dados = new FormData(Elements.registroArmarioForm);
+    const nomeVisitante = (dados.get('nomeVisitante') || '').toString().trim();
+    const telefone = (dados.get('telefone') || '').toString().trim();
+    const paciente = (dados.get('paciente') || '').toString().trim();
+    const leito = (dados.get('leito') || '').toString().trim();
+    const volumes = Number(dados.get('volumes')) || 0;
+    const previsao = (dados.get('previsaoRetirada') || '').toString();
+
+    const agora = new Date();
+    const horaInicio = agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const armarioIdReferencia = registroArmarioAtual.id ?? registroArmarioAtual.numero;
+    let armarioAtualizado = false;
+
+    const armariosAtualizados = (AppState.get('armarios') || []).map((item) => {
+      const mesmoArmario =
+        item.id === registroArmarioAtual.id ||
+        String(item.id) === String(armarioIdReferencia) ||
+        (item.numero && registroArmarioAtual.numero && String(item.numero) === String(registroArmarioAtual.numero));
+
+      if (!mesmoArmario) {
+        return item;
+      }
+
+      armarioAtualizado = true;
+      return {
+        ...item,
+        status: 'em-uso',
+        nomeVisitante,
+        telefone,
+        nomePaciente: paciente,
+        leito,
+        volumes,
+        horaInicio,
+        horaPrevista: previsao,
+        previsaoRetirada: previsao,
+        termoAplicado: item.termoAplicado || false
+      };
+    });
+
+    if (!armarioAtualizado) {
+      armariosAtualizados.push({
+        id: registroArmarioAtual.id ?? Date.now(),
+        numero: registroArmarioAtual.numero || '',
+        status: 'em-uso',
+        tipo: registroArmarioAtual.tipo || 'visitante',
+        unidade: registroArmarioAtual.unidade || '',
+        nomeVisitante,
+        telefone,
+        nomePaciente: paciente,
+        leito,
+        volumes,
+        horaInicio,
+        horaPrevista: previsao,
+        previsaoRetirada: previsao,
+        termoAplicado: false
+      });
+    }
+
+    AppState.set('armarios', armariosAtualizados);
+    fecharModalRegistroArmario();
+    atualizarInterface();
+    carregarDadosTabelas();
+
+    if (typeof Swal !== 'undefined') {
+      Swal.fire('Registro salvo', 'Armário atualizado com sucesso.', 'success');
+    } else {
+      alert('Armário atualizado com sucesso.');
     }
   }
 
@@ -651,6 +820,8 @@
   function bindModals() {
     Elements.armarioModalClose?.addEventListener('click', () => fecharModal(Elements.armarioModal));
     Elements.btnCancelarArmario?.addEventListener('click', () => fecharModal(Elements.armarioModal));
+    Elements.registroArmarioModalClose?.addEventListener('click', fecharModalRegistroArmario);
+    Elements.registroArmarioCancelar?.addEventListener('click', fecharModalRegistroArmario);
     Elements.usuarioModalClose?.addEventListener('click', () => fecharModal(Elements.usuarioModal));
     Elements.usuarioBtnCancelar?.addEventListener('click', () => fecharModal(Elements.usuarioModal));
     Elements.termoModalClose?.addEventListener('click', () => fecharModal(Elements.termoModal));
@@ -661,6 +832,11 @@
   }
 
   function bindForms() {
+    Elements.registroArmarioForm?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      await salvarRegistroArmarioDashboard();
+    });
+
     Elements.armarioForm?.addEventListener('submit', async (event) => {
       event.preventDefault();
       await salvarArmario();
@@ -879,7 +1055,10 @@
       card.addEventListener('click', () => {
         if (armario.termoAplicado) {
           abrirModalTermo(armario.id);
+          return;
         }
+
+        abrirModalRegistroArmario(armario);
       });
 
       Elements.armariosContainer.appendChild(card);
