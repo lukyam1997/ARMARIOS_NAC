@@ -15,6 +15,7 @@
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   </head>
   <body>
+    <a class="skip-link" href="#app-page-title">Ir para o conteúdo</a>
     <div class="app-shell">
       <aside class="sidebar" aria-label="Menu principal">
   <div class="sidebar__header">
@@ -24,64 +25,101 @@
   <nav class="sidebar__nav" aria-label="Navegação do sistema">
     <ul class="sidebar__list">
       <li class="sidebar__item">
-        <a class="sidebar__link sidebar__link--active" data-page="dashboard" href="#">
+        <button
+          class="sidebar__link sidebar__link--active"
+          data-page="dashboard"
+          type="button"
+          aria-controls="dashboard"
+          aria-current="page"
+        >
           <span class="sidebar__icon"><i class="fa-solid fa-chart-line" aria-hidden="true"></i></span>
           <span class="sidebar__label">Dashboard</span>
-        </a>
+        </button>
       </li>
       <li class="sidebar__item">
-        <a class="sidebar__link" data-page="visitantes" href="#">
+        <button class="sidebar__link" data-page="visitantes" type="button" aria-controls="visitantes">
           <span class="sidebar__icon"><i class="fa-solid fa-person-walking" aria-hidden="true"></i></span>
           <span class="sidebar__label">Visitantes</span>
-        </a>
+        </button>
       </li>
       <li class="sidebar__item">
-        <a class="sidebar__link" data-page="acompanhantes" href="#">
+        <button class="sidebar__link" data-page="acompanhantes" type="button" aria-controls="acompanhantes">
           <span class="sidebar__icon"><i class="fa-solid fa-people-group" aria-hidden="true"></i></span>
           <span class="sidebar__label">Acompanhantes</span>
-        </a>
+        </button>
       </li>
       <li class="sidebar__item">
-        <a class="sidebar__link" data-page="historico-visitantes" href="#">
+        <button
+          class="sidebar__link"
+          data-page="historico-visitantes"
+          type="button"
+          aria-controls="historico-visitantes"
+        >
           <span class="sidebar__icon"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i></span>
           <span class="sidebar__label">Histórico Visitantes</span>
-        </a>
+        </button>
       </li>
       <li class="sidebar__item">
-        <a class="sidebar__link" data-page="historico-acompanhantes" href="#">
+        <button
+          class="sidebar__link"
+          data-page="historico-acompanhantes"
+          type="button"
+          aria-controls="historico-acompanhantes"
+        >
           <span class="sidebar__icon"><i class="fa-solid fa-book-open-reader" aria-hidden="true"></i></span>
           <span class="sidebar__label">Histórico Acompanhantes</span>
-        </a>
+        </button>
       </li>
       <li class="sidebar__item">
-        <a class="sidebar__link" data-page="termo-responsabilidade" href="#">
+        <button
+          class="sidebar__link"
+          data-page="termo-responsabilidade"
+          type="button"
+          aria-controls="termo-responsabilidade"
+        >
           <span class="sidebar__icon"><i class="fa-solid fa-file-signature" aria-hidden="true"></i></span>
           <span class="sidebar__label">Termo de Responsabilidade</span>
-        </a>
+        </button>
       </li>
       <li class="sidebar__item">
-        <a class="sidebar__link" data-page="cadastro-armarios" href="#">
+        <button
+          class="sidebar__link"
+          data-page="cadastro-armarios"
+          type="button"
+          aria-controls="cadastro-armarios"
+        >
           <span class="sidebar__icon"><i class="fa-solid fa-box-archive" aria-hidden="true"></i></span>
           <span class="sidebar__label">Cadastro de Armários</span>
-        </a>
+        </button>
       </li>
       <li class="sidebar__item">
-        <a class="sidebar__link" data-page="cadastro-unidades" href="#">
+        <button
+          class="sidebar__link"
+          data-page="cadastro-unidades"
+          type="button"
+          aria-controls="cadastro-unidades"
+        >
           <span class="sidebar__icon"><i class="fa-solid fa-hospital-user" aria-hidden="true"></i></span>
           <span class="sidebar__label">Cadastro de Unidades</span>
-        </a>
+        </button>
       </li>
       <li class="sidebar__item">
-        <a class="sidebar__link" data-page="usuarios" href="#">
+        <button class="sidebar__link" data-page="usuarios" type="button" aria-controls="usuarios">
           <span class="sidebar__icon"><i class="fa-solid fa-id-badge" aria-hidden="true"></i></span>
           <span class="sidebar__label">Usuários</span>
-        </a>
+        </button>
       </li>
       <li class="sidebar__item">
-        <a class="sidebar__link" data-page="logs" href="#">
+        <button
+          class="sidebar__link"
+          data-page="logs"
+          type="button"
+          aria-controls="logs"
+          aria-label="Exibir registros de atividades"
+        >
           <span class="sidebar__icon"><i class="fa-solid fa-clipboard-list" aria-hidden="true"></i></span>
           <span class="sidebar__label">LOGS</span>
-        </a>
+        </button>
       </li>
     </ul>
   </nav>

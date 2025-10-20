@@ -29,12 +29,121 @@
     };
   })();
 
+  const ApiErrorHandler = (() => {
+    let lastAlertAt = 0;
+
+    function notify(method, error) {
+      console.error(`[ApiClient] Erro ao executar ${method}`, error);
+      if (typeof Swal === 'undefined') {
+        return;
+      }
+
+      const agora = Date.now();
+      if (agora - lastAlertAt < 1000) {
+        return;
+      }
+
+      lastAlertAt = agora;
+      Swal.fire({
+        icon: 'error',
+        title: 'Erro de comunicação',
+        text: 'Não foi possível completar a operação. Tente novamente.',
+        confirmButtonText: 'Entendi'
+      }).catch(() => {});
+    }
+
+    return { handle: notify };
+  })();
+
+  const Sanitizer = (() => {
+    const escapeMap = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+      '`': '&#96;'
+    };
+
+    const isFiniteNumber = Number.isFinite || function(value) {
+      return typeof value === 'number' && isFinite(value);
+    };
+
+    function escapeHTML(value) {
+      return String(value).replace(/[&<>"'`]/g, (char) => escapeMap[char]);
+    }
+
+    function normalizeValue(value, fallback) {
+      return value === null || value === undefined || value === '' ? fallback : value;
+    }
+
+    function parseDateValue(value) {
+      if (!value) {
+        return null;
+      }
+      if (value instanceof Date) {
+        return isNaN(value.getTime()) ? null : value;
+      }
+      const parsed = new Date(value);
+      return isNaN(parsed.getTime()) ? null : parsed;
+    }
+
+    function parseTimeString(value) {
+      if (typeof value !== 'string') {
+        return null;
+      }
+      const parts = value.split(':');
+      if (parts.length < 2) {
+        return null;
+      }
+      const hours = Number(parts[0]);
+      const minutes = Number(parts[1]);
+      if (!isFiniteNumber(hours) || !isFiniteNumber(minutes)) {
+        return null;
+      }
+      const now = new Date();
+      return new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes, 0, 0);
+    }
+
+    return {
+      escapeHTML,
+      text(value, fallback = '') {
+        return escapeHTML(normalizeValue(value, fallback));
+      },
+      textWithFallback(value, fallback = '-') {
+        return escapeHTML(normalizeValue(value, fallback));
+      },
+      number(value, fallback = '-') {
+        const parsed = typeof value === 'number' ? value : Number(value);
+        return isFiniteNumber(parsed) ? escapeHTML(parsed) : escapeHTML(fallback);
+      },
+      time(value, fallback = '') {
+        let parsed = parseDateValue(value);
+        if (!parsed) {
+          parsed = parseTimeString(value);
+        }
+        if (parsed) {
+          return escapeHTML(parsed.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
+        }
+        return fallback === '' ? '' : escapeHTML(fallback);
+      },
+      toNumberValue(value) {
+        const parsed = typeof value === 'number' ? value : Number(value);
+        return isFiniteNumber(parsed) ? parsed : null;
+      },
+      parseDateValue
+    };
+  })();
+
   const ApiClient = (() => {
     function executar(method, params) {
       return new Promise((resolve, reject) => {
         google.script.run
           .withSuccessHandler(resolve)
-          .withFailureHandler(reject)[method](params);
+          .withFailureHandler((error) => {
+            ApiErrorHandler.handle(method, error);
+            reject(error);
+          })[method](params);
       });
     }
 
@@ -44,11 +153,7 @@
       }
 
       try {
-        const safeCall = (method, params) =>
-          executar(method, params).catch((error) => {
-            console.error(`Erro ao executar ${method}`, error);
-            return null;
-          });
+        const safeCall = (method, params) => executar(method, params).catch(() => null);
 
         const [
           unidadesRes,
@@ -100,20 +205,30 @@
         const normalizarArmarios = (resposta, tipoPadrao) => {
           return extrairDados(resposta, `getArmarios:${tipoPadrao}`).map((item) => {
             const cadastro = cadastroPorNumero[item.numero] || {};
+            const idNormalizado = Sanitizer.toNumberValue(item.id);
+            const volumesNormalizados = Sanitizer.toNumberValue(item.volumes);
+            const horaPrevistaData = Sanitizer.parseDateValue(item.horaPrevista);
             return {
               ...item,
+              id: idNormalizado !== null ? idNormalizado : item.id,
+              volumes: volumesNormalizados !== null ? volumesNormalizados : item.volumes || 0,
               tipo: item.tipo || tipoPadrao,
               unidade: item.unidade || cadastro.unidade || '',
-              localizacao: item.localizacao || cadastro.localizacao || ''
+              localizacao: item.localizacao || cadastro.localizacao || '',
+              horaPrevista: horaPrevistaData ? horaPrevistaData.toISOString() : item.horaPrevista || ''
             };
           });
         };
 
         const normalizarHistorico = (resposta, tipoPadrao) => {
-          return extrairDados(resposta, `getHistorico:${tipoPadrao}`).map((item) => ({
-            ...item,
-            tipo: item.tipo || tipoPadrao
-          }));
+          return extrairDados(resposta, `getHistorico:${tipoPadrao}`).map((item) => {
+            const idNormalizado = Sanitizer.toNumberValue(item.id);
+            return {
+              ...item,
+              id: idNormalizado !== null ? idNormalizado : item.id,
+              tipo: item.tipo || tipoPadrao
+            };
+          });
         };
 
         const armarios = [
@@ -126,15 +241,39 @@
           ...normalizarHistorico(historicoAcompanhantesRes, 'acompanhante')
         ];
 
+        const unidades = extrairDados(unidadesRes, 'getUnidades').map((item) => {
+          const idNormalizado = Sanitizer.toNumberValue(item.id);
+          return {
+            ...item,
+            id: idNormalizado !== null ? idNormalizado : item.id
+          };
+        });
+
+        const usuarios = extrairDados(usuariosRes, 'getUsuarios').map((item) => {
+          const idNormalizado = Sanitizer.toNumberValue(item.id);
+          return {
+            ...item,
+            id: idNormalizado !== null ? idNormalizado : item.id
+          };
+        });
+
+        const cadastroArmarios = cadastroLista.map((item) => {
+          const idNormalizado = Sanitizer.toNumberValue(item.id);
+          return {
+            ...item,
+            id: idNormalizado !== null ? idNormalizado : item.id
+          };
+        });
+
         return {
-          unidades: extrairDados(unidadesRes, 'getUnidades'),
+          unidades,
           armarios,
           termos: {},
           movimentacoes: {},
           historico,
-          usuarios: extrairDados(usuariosRes, 'getUsuarios'),
+          usuarios,
           logs: extrairDados(logsRes, 'getLogs'),
-          cadastroArmarios: cadastroLista,
+          cadastroArmarios,
           notificacoes: extrairDados(notificacoesRes, 'getNotificacoes')
         };
       } catch (error) {
@@ -544,9 +683,15 @@
   function navegarParaPagina(pagina) {
     AppState.set('paginaAtual', pagina);
 
-    Elements.sidebarLinks.forEach((link) => link.classList.remove('sidebar__link--active'));
+    Elements.sidebarLinks.forEach((link) => {
+      link.classList.remove('sidebar__link--active');
+      link.removeAttribute('aria-current');
+    });
     const linkAtivo = document.querySelector(`.sidebar__link[data-page="${pagina}"]`);
-    linkAtivo?.classList.add('sidebar__link--active');
+    if (linkAtivo) {
+      linkAtivo.classList.add('sidebar__link--active');
+      linkAtivo.setAttribute('aria-current', 'page');
+    }
 
     Elements.pages.forEach((page) => page.classList.remove('page--active'));
     const page = document.getElementById(pagina);
@@ -630,14 +775,18 @@
       notificacoes.forEach((notificacao) => {
         const item = document.createElement('div');
         item.className = 'notification-item';
-        const icone = notificacao.tipo === 'danger' ? 'fa-exclamation' : 'fa-clock';
+        const tipo = notificacao.tipo === 'danger' ? 'danger' : notificacao.tipo === 'warning' ? 'warning' : 'info';
+        const icone = tipo === 'danger' ? 'fa-exclamation' : 'fa-clock';
+        const titulo = Sanitizer.text(notificacao.titulo || 'Aviso');
+        const tempo = notificacao.tempo ? Sanitizer.text(notificacao.tempo) : '';
+        const tempoHtml = tempo ? `<span class="notification-time">${tempo}</span>` : '';
         item.innerHTML = `
-          <span class="notification-icon ${notificacao.tipo}">
-            <i class="fa-solid ${icone}"></i>
+          <span class="notification-icon ${tipo}">
+            <i class="fa-solid ${icone}" aria-hidden="true"></i>
           </span>
           <div class="notification-content">
-            <span class="notification-title">${notificacao.titulo}</span>
-            <span class="notification-time">${notificacao.tempo || ''}</span>
+            <span class="notification-title">${titulo}</span>
+            ${tempoHtml}
           </div>
         `;
         Elements.notificationList.appendChild(item);
@@ -664,19 +813,37 @@
 
     armarios.forEach((armario) => {
       const card = document.createElement('article');
-      card.className = `armario-card ${armario.status}`;
-      card.dataset.id = armario.id;
+      const status = typeof armario.status === 'string' ? armario.status : '';
+      const statusClass = ['livre', 'em-uso', 'proximo', 'vencido'].includes(status) ? status : 'indefinido';
+      const statusLabel = Sanitizer.text((status || '').replace(/-/g, ' '), '—');
+      const numero = Sanitizer.textWithFallback(armario.numero, '-');
+      const unidade = Sanitizer.textWithFallback(armario.unidade, '-');
+      const detalhes = [`<span><strong>Unidade:</strong> ${unidade}</span>`];
+
+      if (armario.nomeVisitante) {
+        detalhes.push(`<span><strong>Responsável:</strong> ${Sanitizer.text(armario.nomeVisitante)}</span>`);
+      }
+      if (armario.nomePaciente) {
+        detalhes.push(`<span><strong>Paciente:</strong> ${Sanitizer.text(armario.nomePaciente)}</span>`);
+      }
+      if (armario.horaInicio) {
+        detalhes.push(`<span><strong>Início:</strong> ${Sanitizer.text(armario.horaInicio)}</span>`);
+      }
+      const horaPrevista = Sanitizer.time(armario.horaPrevista);
+      if (horaPrevista) {
+        detalhes.push(`<span><strong>Previsto:</strong> ${horaPrevista}</span>`);
+      }
+
+      card.className = `armario-card ${statusClass}`;
+      const cardId = Sanitizer.toNumberValue(armario.id);
+      card.dataset.id = cardId !== null ? String(cardId) : String(armario.id ?? '');
       card.innerHTML = `
         <header class="armario-header">
-          <span class="armario-number">${armario.numero}</span>
-          <span class="armario-status status-${armario.status}">${armario.status.replace('-', ' ')}</span>
+          <span class="armario-number">${numero}</span>
+          <span class="armario-status status-${statusClass}">${statusLabel}</span>
         </header>
         <div class="armario-details">
-          <span><strong>Unidade:</strong> ${armario.unidade || '-'}</span>
-          ${armario.nomeVisitante ? `<span><strong>Responsável:</strong> ${armario.nomeVisitante}</span>` : ''}
-          ${armario.nomePaciente ? `<span><strong>Paciente:</strong> ${armario.nomePaciente}</span>` : ''}
-          ${armario.horaInicio ? `<span><strong>Início:</strong> ${armario.horaInicio}</span>` : ''}
-          ${armario.horaPrevista ? `<span><strong>Previsto:</strong> ${armario.horaPrevista}</span>` : ''}
+          ${detalhes.join('')}
         </div>
       `;
 
@@ -1666,14 +1833,19 @@
     movimentos.forEach((movimento) => {
       const item = document.createElement('div');
       item.className = 'movimentacao-item';
+      const tipo = Sanitizer.text((movimento.tipo || '').toUpperCase(), '-');
+      const dataHoraTexto = [movimento.data, movimento.hora].filter(Boolean).join(' ').trim();
+      const dataHora = Sanitizer.text(dataHoraTexto || '-');
+      const descricao = Sanitizer.textWithFallback(movimento.descricao, '-');
+      const responsavel = Sanitizer.textWithFallback(movimento.responsavel, '-');
       item.innerHTML = `
         <div class="movimentacao-header">
-          <span>${movimento.tipo.toUpperCase()}</span>
-          <span>${movimento.data} ${movimento.hora}</span>
+          <span>${tipo}</span>
+          <span>${dataHora}</span>
         </div>
         <div class="movimentacao-meta">
-          <span>${movimento.descricao}</span>
-          <span>Responsável: ${movimento.responsavel}</span>
+          <span>${descricao}</span>
+          <span>Responsável: ${responsavel}</span>
         </div>
       `;
       Elements.movimentacoesList.appendChild(item);
@@ -1769,16 +1941,22 @@
     tbody.innerHTML = armarios
       .map(
         (armario) => `
-          <tr data-id="${armario.id}">
-            <td>${armario.numero}</td>
-            <td>${armario.unidade || '-'}</td>
-            <td>${armario.status}</td>
-            <td>${armario.nomeVisitante || '-'}</td>
-            <td>${armario.nomePaciente || '-'}</td>
-            <td>${armario.leito || '-'}</td>
-            <td>${armario.volumes || '-'}</td>
-            <td>${armario.horaInicio || '-'}</td>
-            ${tipo === 'visitante' ? `<td>${armario.horaPrevista || '-'}</td>` : ''}
+          <tr data-id="${Sanitizer.escapeHTML(
+            String(Sanitizer.toNumberValue(armario.id) ?? armario.id ?? '')
+          )}">
+            <td>${Sanitizer.textWithFallback(armario.numero, '-')}</td>
+            <td>${Sanitizer.textWithFallback(armario.unidade, '-')}</td>
+            <td>${Sanitizer.textWithFallback(armario.status, '-')}</td>
+            <td>${Sanitizer.textWithFallback(armario.nomeVisitante, '-')}</td>
+            <td>${Sanitizer.textWithFallback(armario.nomePaciente, '-')}</td>
+            <td>${Sanitizer.textWithFallback(armario.leito, '-')}</td>
+            <td>${Sanitizer.number(armario.volumes, '-')}</td>
+            <td>${Sanitizer.textWithFallback(armario.horaInicio, '-')}</td>
+            ${
+              tipo === 'visitante'
+                ? `<td>${Sanitizer.time(armario.horaPrevista, '-')}</td>`
+                : ''
+            }
             <td>
               <button class="btn btn-secondary" data-action="liberar" type="button">Liberar</button>
               <button class="btn btn-primary" data-action="termo" type="button">Termo</button>
@@ -1801,15 +1979,15 @@
       .map(
         (item) => `
           <tr>
-            <td>${item.data || '-'}</td>
-            <td>${item.armario || '-'}</td>
-            <td>${item.nome || '-'}</td>
-            <td>${item.paciente || '-'}</td>
-            <td>${item.leito || '-'}</td>
-            <td>${item.volumes || '-'}</td>
-            <td>${item.horaInicio || '-'}</td>
-            <td>${item.horaFim || '-'}</td>
-            <td>${item.status || '-'}</td>
+            <td>${Sanitizer.textWithFallback(item.data, '-')}</td>
+            <td>${Sanitizer.textWithFallback(item.armario, '-')}</td>
+            <td>${Sanitizer.textWithFallback(item.nome, '-')}</td>
+            <td>${Sanitizer.textWithFallback(item.paciente, '-')}</td>
+            <td>${Sanitizer.textWithFallback(item.leito, '-')}</td>
+            <td>${Sanitizer.number(item.volumes, '-')}</td>
+            <td>${Sanitizer.textWithFallback(item.horaInicio, '-')}</td>
+            <td>${Sanitizer.textWithFallback(item.horaFim, '-')}</td>
+            <td>${Sanitizer.textWithFallback(item.status, '-')}</td>
           </tr>
         `
       )
@@ -1825,13 +2003,15 @@
     Elements.tabelaCadastroArmariosBody.innerHTML = cadastro
       .map(
         (item) => `
-          <tr data-id="${item.id}">
-            <td>${item.id}</td>
-            <td>${item.numero}</td>
-            <td>${item.tipo}</td>
-            <td>${item.unidade}</td>
-            <td>${item.localizacao}</td>
-            <td>${item.status}</td>
+          <tr data-id="${Sanitizer.escapeHTML(
+            String(Sanitizer.toNumberValue(item.id) ?? item.id ?? '')
+          )}">
+            <td>${Sanitizer.number(item.id, '-')}</td>
+            <td>${Sanitizer.textWithFallback(item.numero, '-')}</td>
+            <td>${Sanitizer.textWithFallback(item.tipo, '-')}</td>
+            <td>${Sanitizer.textWithFallback(item.unidade, '-')}</td>
+            <td>${Sanitizer.textWithFallback(item.localizacao, '-')}</td>
+            <td>${Sanitizer.textWithFallback(item.status, '-')}</td>
             <td><button class="btn btn-danger" data-action="remover" type="button">Remover</button></td>
           </tr>
         `
@@ -1848,10 +2028,12 @@
     Elements.tabelaUnidadesBody.innerHTML = unidades
       .map(
         (unidade) => `
-          <tr data-id="${unidade.id}">
-            <td>${unidade.id}</td>
-            <td>${unidade.nome}</td>
-            <td>${unidade.status}</td>
+          <tr data-id="${Sanitizer.escapeHTML(
+            String(Sanitizer.toNumberValue(unidade.id) ?? unidade.id ?? '')
+          )}">
+            <td>${Sanitizer.number(unidade.id, '-')}</td>
+            <td>${Sanitizer.textWithFallback(unidade.nome, '-')}</td>
+            <td>${Sanitizer.textWithFallback(unidade.status, '-')}</td>
             <td>—</td>
             <td><button class="btn btn-secondary" data-action="desativar" type="button">Alternar status</button></td>
           </tr>
@@ -1869,11 +2051,13 @@
     Elements.tabelaUsuariosBody.innerHTML = usuarios
       .map(
         (usuario) => `
-          <tr data-id="${usuario.id}">
-            <td>${usuario.id}</td>
-            <td>${usuario.nome}</td>
-            <td>${usuario.email}</td>
-            <td>${usuario.perfil}</td>
+          <tr data-id="${Sanitizer.escapeHTML(
+            String(Sanitizer.toNumberValue(usuario.id) ?? usuario.id ?? '')
+          )}">
+            <td>${Sanitizer.number(usuario.id, '-')}</td>
+            <td>${Sanitizer.textWithFallback(usuario.nome, '-')}</td>
+            <td>${Sanitizer.textWithFallback(usuario.email, '-')}</td>
+            <td>${Sanitizer.textWithFallback(usuario.perfil, '-')}</td>
             <td>${usuario.acessoVisitantes ? 'Sim' : 'Não'}</td>
             <td>${usuario.acessoAcompanhantes ? 'Sim' : 'Não'}</td>
             <td><button class="btn btn-danger" data-action="remover" type="button">Remover</button></td>
@@ -1893,10 +2077,10 @@
       .map(
         (log) => `
           <tr>
-            <td>${log.dataHora}</td>
-            <td>${log.usuario}</td>
-            <td>${log.acao}</td>
-            <td>${log.detalhes}</td>
+            <td>${Sanitizer.textWithFallback(log.dataHora, '-')}</td>
+            <td>${Sanitizer.textWithFallback(log.usuario, '-')}</td>
+            <td>${Sanitizer.textWithFallback(log.acao, '-')}</td>
+            <td>${Sanitizer.textWithFallback(log.detalhes, '-')}</td>
           </tr>
         `
       )
@@ -1913,11 +2097,13 @@
     Elements.tabelaTermosBody.innerHTML = armarios
       .map(
         (armario) => `
-          <tr data-id="${armario.id}">
-            <td>${armario.numero}</td>
-            <td>${armario.nomeVisitante || '-'}</td>
-            <td>${armario.nomePaciente || '-'}</td>
-            <td>${termos[armario.id]?.aplicadoEm || '-'}</td>
+          <tr data-id="${Sanitizer.escapeHTML(
+            String(Sanitizer.toNumberValue(armario.id) ?? armario.id ?? '')
+          )}">
+            <td>${Sanitizer.textWithFallback(armario.numero, '-')}</td>
+            <td>${Sanitizer.textWithFallback(armario.nomeVisitante, '-')}</td>
+            <td>${Sanitizer.textWithFallback(armario.nomePaciente, '-')}</td>
+            <td>${Sanitizer.textWithFallback(termos[armario.id]?.aplicadoEm, '-')}</td>
             <td><button class="btn btn-secondary" data-action="movimentacoes" type="button">Movimentações</button></td>
             <td><button class="btn btn-primary" data-action="encerrar" type="button">Encerrar</button></td>
           </tr>
