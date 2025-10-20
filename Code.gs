@@ -148,7 +148,6 @@ function inicializarPlanilha() {
   return withLock('init', function() {
     try {
       ensureSheets();
-      adicionarDadosIniciais();
       clearCache(['UNIDADES', 'USUARIOS', 'CADASTRO_ARMARIOS', 'ARMARIOS_visitante', 'ARMARIOS_acompanhante']);
       LogService.register('SISTEMA', 'Inicialização', 'Planilha inicializada com sucesso', '');
       return { success: true, message: 'Planilha inicializada com sucesso' };
@@ -171,39 +170,6 @@ function ensureSheets() {
     }
     sheet.setFrozenRows(1);
   });
-}
-
-function adicionarDadosIniciais() {
-  var ss = getSpreadsheet();
-
-  var cadastroSheet = ss.getSheetByName('Cadastro Armários');
-  if (cadastroSheet.getLastRow() === 1) {
-    var armariosIniciais = [
-      ['V-01', 'visitante', 'NAC Eletiva', 'Bloco A - Térreo', 'ativo', new Date()],
-      ['V-02', 'visitante', 'NAC Eletiva', 'Bloco A - Térreo', 'ativo', new Date()],
-      ['V-03', 'visitante', 'UIB', 'Bloco A - Térreo', 'ativo', new Date()],
-      ['V-04', 'visitante', 'UIB', 'Bloco A - Térreo', 'ativo', new Date()],
-      ['A-01', 'acompanhante', 'NAC Eletiva', 'Bloco B - 1º Andar', 'ativo', new Date()],
-      ['A-02', 'acompanhante', 'UIB', 'Bloco B - 1º Andar', 'ativo', new Date()],
-      ['A-03', 'acompanhante', 'UIB', 'Bloco B - 1º Andar', 'ativo', new Date()]
-    ];
-
-    var nextId = 1;
-    armariosIniciais.forEach(function(entry) {
-      cadastroSheet.appendRow([nextId++].concat(entry));
-    });
-  }
-
-  var unidadesSheet = ss.getSheetByName('Unidades');
-  if (unidadesSheet.getLastRow() === 1) {
-    unidadesSheet.appendRow([1, 'NAC Eletiva', 'ativa', new Date()]);
-    unidadesSheet.appendRow([2, 'UIB', 'ativa', new Date()]);
-  }
-
-  var usuariosSheet = ss.getSheetByName('Usuários');
-  if (usuariosSheet.getLastRow() === 1) {
-    usuariosSheet.appendRow([1, 'Administrador', 'admin@hospital.com', 'admin', true, true, new Date(), 'ativo']);
-  }
 }
 
 function getSpreadsheet() {

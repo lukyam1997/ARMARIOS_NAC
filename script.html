@@ -4,80 +4,15 @@
 
   const MockBackend = (() => {
     const bootstrap = {
-      unidades: [
-        { id: 1, nome: 'NAC Eletiva', status: 'ativa' },
-        { id: 2, nome: 'UIB', status: 'ativa' }
-      ],
-      armarios: [
-        { id: 1, numero: 'V-01', status: 'livre', tipo: 'visitante', unidade: 'NAC Eletiva', localizacao: 'Bloco A - Térreo', termoAplicado: false },
-        { id: 2, numero: 'V-02', status: 'em-uso', tipo: 'visitante', unidade: 'NAC Eletiva', localizacao: 'Bloco A - Térreo', nomeVisitante: 'Maria Silva', nomePaciente: 'João Santos', leito: '201-A', volumes: 2, horaInicio: '14:30', horaPrevista: '16:30', termoAplicado: false },
-        { id: 3, numero: 'V-03', status: 'proximo', tipo: 'visitante', unidade: 'UIB', localizacao: 'Bloco A - Térreo', nomeVisitante: 'Carlos Oliveira', nomePaciente: 'Ana Costa', leito: '305-B', volumes: 1, horaInicio: '13:15', horaPrevista: '15:15', termoAplicado: false },
-        { id: 4, numero: 'V-04', status: 'vencido', tipo: 'visitante', unidade: 'UIB', localizacao: 'Bloco A - Térreo', nomeVisitante: 'Roberta Lima', nomePaciente: 'Pedro Alves', leito: '102-C', volumes: 3, horaInicio: '10:00', horaPrevista: '12:00', termoAplicado: false },
-        { id: 5, numero: 'A-01', status: 'livre', tipo: 'acompanhante', unidade: 'NAC Eletiva', localizacao: 'Bloco B - 1º Andar', termoAplicado: false },
-        { id: 6, numero: 'A-02', status: 'em-uso', tipo: 'acompanhante', unidade: 'UIB', localizacao: 'Bloco B - 1º Andar', nomeVisitante: 'Fernanda Rocha', nomePaciente: 'Luiz Mendes', leito: '401-D', volumes: 4, horaInicio: '09:45', termoAplicado: true },
-        { id: 7, numero: 'A-03', status: 'proximo', tipo: 'acompanhante', unidade: 'UIB', localizacao: 'Bloco B - 1º Andar', nomeVisitante: 'Ricardo Nunes', nomePaciente: 'Sofia Pereira', leito: '208-E', volumes: 2, horaInicio: '11:20', termoAplicado: false }
-      ],
-      termos: {
-        6: {
-          paciente: 'Luiz Mendes',
-          prontuario: '987654',
-          nascimento: '1980-02-14',
-          setor: 'UTI Geral',
-          leito: '401-D',
-          consciente: 'Não',
-          acompanhante: 'Fernanda Rocha',
-          telefone: '(85) 98888-1122',
-          documento: '123.456.789-00',
-          parentesco: 'Esposa',
-          orientacoes: ['ori1', 'ori2', 'ori3'],
-          volumes: [
-            { quantidade: 2, descricao: 'Mala de roupas' },
-            { quantidade: 2, descricao: 'Sacola com itens pessoais' }
-          ],
-          descricaoVolumes: '2x Mala de roupas; 2x Sacola com itens pessoais',
-          aplicadoEm: '2024-01-14T09:50:00'
-        }
-      },
-      movimentacoes: {
-        6: [
-          {
-            tipo: 'entrada',
-            descricao: 'Entrada inicial dos pertences',
-            responsavel: 'Fernanda Rocha',
-            data: '2024-01-14',
-            hora: '09:50'
-          }
-        ]
-      },
-      historico: [
-        { data: '2024-01-15 14:30', armario: 'V-02', visitante: 'Maria Silva', paciente: 'João Santos', leito: '201-A', volumes: 2, horaInicio: '14:30', horaFim: '16:30', status: 'FINALIZADO' },
-        { data: '2024-01-15 13:15', armario: 'V-03', visitante: 'Carlos Oliveira', paciente: 'Ana Costa', leito: '305-B', volumes: 1, horaInicio: '13:15', horaFim: '15:15', status: 'FINALIZADO' },
-        { data: '2024-01-15 10:00', armario: 'V-04', visitante: 'Roberta Lima', paciente: 'Pedro Alves', leito: '102-C', volumes: 3, horaInicio: '10:00', horaFim: '12:00', status: 'FINALIZADO' },
-        { data: '2024-01-14 09:45', armario: 'A-02', acompanhante: 'Fernanda Rocha', paciente: 'Luiz Mendes', leito: '401-D', volumes: 4, horaInicio: '09:45', horaFim: '18:00', status: 'FINALIZADO' }
-      ],
-      usuarios: [
-        { id: 1, nome: 'João Silva', email: 'joao.silva@hospital.com', perfil: 'admin', acessoVisitantes: true, acessoAcompanhantes: true },
-        { id: 2, nome: 'Maria Santos', email: 'maria.santos@hospital.com', perfil: 'usuario', acessoVisitantes: true, acessoAcompanhantes: false },
-        { id: 3, nome: 'Carlos Oliveira', email: 'carlos.oliveira@hospital.com', perfil: 'usuario', acessoVisitantes: false, acessoAcompanhantes: true }
-      ],
-      logs: [
-        { dataHora: '2024-01-15 16:35:00', usuario: 'joao.silva@hospital.com', acao: 'LIBERAÇÃO', detalhes: 'Armário V-02 liberado' },
-        { dataHora: '2024-01-15 16:30:00', usuario: 'sistema', acao: 'NOTIFICAÇÃO', detalhes: 'Armário V-04 vencido' },
-        { dataHora: '2024-01-15 15:15:00', usuario: 'maria.santos@hospital.com', acao: 'CADASTRO', detalhes: 'Armário V-03 cadastrado para Carlos Oliveira' },
-        { dataHora: '2024-01-15 14:30:00', usuario: 'carlos.oliveira@hospital.com', acao: 'CADASTRO', detalhes: 'Armário A-02 cadastrado para Fernanda Rocha' }
-      ],
-      cadastroArmarios: [
-        { id: 1, numero: 'V-01', tipo: 'visitante', unidade: 'NAC Eletiva', localizacao: 'Bloco A - Térreo', status: 'ativo' },
-        { id: 2, numero: 'V-02', tipo: 'visitante', unidade: 'NAC Eletiva', localizacao: 'Bloco A - Térreo', status: 'ativo' },
-        { id: 3, numero: 'V-03', tipo: 'visitante', unidade: 'UIB', localizacao: 'Bloco A - Térreo', status: 'ativo' },
-        { id: 4, numero: 'A-01', tipo: 'acompanhante', unidade: 'NAC Eletiva', localizacao: 'Bloco B - 1º Andar', status: 'ativo' },
-        { id: 5, numero: 'A-02', tipo: 'acompanhante', unidade: 'UIB', localizacao: 'Bloco B - 1º Andar', status: 'ativo' }
-      ],
-      notificacoes: [
-        { tipo: 'danger', titulo: 'Armário V-15 vencido', tempo: 'Há 5 minutos' },
-        { tipo: 'danger', titulo: 'Armário V-32 vencido', tempo: 'Há 12 minutos' },
-        { tipo: 'warning', titulo: 'Armário A-07 próximo do horário', tempo: 'Há 2 minutos' }
-      ]
+      unidades: [],
+      armarios: [],
+      termos: {},
+      movimentacoes: {},
+      historico: [],
+      usuarios: [],
+      logs: [],
+      cadastroArmarios: [],
+      notificacoes: []
     };
 
     const clone = (value) => JSON.parse(JSON.stringify(value));
