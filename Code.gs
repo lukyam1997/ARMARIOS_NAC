@@ -57,32 +57,41 @@ function doPost(e) {
 }
 
 function handlePost(e) {
-  var action = e.parameter.action;
+  if (!e || !e.parameter) {
+    return respond({ success: false, error: 'Requisição inválida: nenhum parâmetro informado.' });
+  }
+
+  var params = e.parameter;
+  var action = params.action;
+
+  if (!action) {
+    return respond({ success: false, error: 'Ação não informada.' });
+  }
 
   try {
     switch (action) {
       case 'getArmarios':
-        return respond(ArmarioService.list(e.parameter.tipo));
+        return respond(ArmarioService.list(params.tipo));
       case 'cadastrarArmario':
-        return respond(ArmarioService.create(e.parameter));
+        return respond(ArmarioService.create(params));
       case 'liberarArmario':
-        return respond(ArmarioService.release(Number(e.parameter.id), e.parameter.tipo));
+        return respond(ArmarioService.release(Number(params.id), params.tipo));
       case 'getUsuarios':
         return respond(UsuarioService.list());
       case 'cadastrarUsuario':
-        return respond(UsuarioService.create(e.parameter));
+        return respond(UsuarioService.create(params));
       case 'getLogs':
         return respond(LogService.list());
       case 'getNotificacoes':
         return respond(NotificacaoService.list());
       case 'getEstatisticas':
-        return respond(EstatisticaService.dashboard(e.parameter.tipoUsuario));
+        return respond(EstatisticaService.dashboard(params.tipoUsuario));
       case 'getHistorico':
-        return respond(HistoricoService.list(e.parameter.tipo));
+        return respond(HistoricoService.list(params.tipo));
       case 'getCadastroArmarios':
         return respond(ArmarioService.listCadastro());
       case 'cadastrarArmarioFisico':
-        return respond(ArmarioService.createCadastro(e.parameter));
+        return respond(ArmarioService.createCadastro(params));
       default:
         return respond({ success: false, error: 'Ação não reconhecida' });
     }
@@ -231,6 +240,53 @@ function sanitizeNumber(value, fallback) {
   return isNaN(parsed) ? fallback : parsed;
 }
 
+function toFiniteNumber(value) {
+  var parsed = Number(value);
+  return isNaN(parsed) || !isFinite(parsed) ? null : parsed;
+}
+
+function nextId(collection, property) {
+  var source = collection || [];
+  var ids = source
+    .map(function(item) {
+      var value = property ? item[property] : item;
+      return toFiniteNumber(value);
+    })
+    .filter(function(id) {
+      return id !== null;
+    });
+  return ids.length ? Math.max.apply(null, ids) + 1 : 1;
+}
+
+function parseHoraPrevista(value) {
+  var texto = normalizeText(value);
+  if (!texto) {
+    return '';
+  }
+  var partes = texto.split(':');
+  if (partes.length < 2) {
+    return '';
+  }
+  var horas = Number(partes[0]);
+  var minutos = Number(partes[1]);
+  if (isNaN(horas) || isNaN(minutos)) {
+    return '';
+  }
+  var agora = new Date();
+  return new Date(agora.getFullYear(), agora.getMonth(), agora.getDate(), horas, minutos, 0, 0);
+}
+
+function parseDateValue(value) {
+  if (!value) {
+    return null;
+  }
+  if (value instanceof Date) {
+    return isNaN(value.getTime()) ? null : value;
+  }
+  var parsed = new Date(value);
+  return isNaN(parsed.getTime()) ? null : parsed;
+}
+
 function toBoolean(value, defaultValue) {
   if (value === null || value === undefined || value === '') {
     return defaultValue === undefined ? false : defaultValue;
@@ -302,14 +358,24 @@ var UnidadeService = {
       if (lastRow <= 1) {
         return [];
       }
-      return sheet.getRange(2, 1, lastRow - 1, 4).getValues().map(function(row) {
-        return {
-          id: row[0],
-          nome: row[1],
-          status: row[2],
-          dataCadastro: row[3]
-        };
-      });
+      return sheet
+        .getRange(2, 1, lastRow - 1, 4)
+        .getValues()
+        .map(function(row) {
+          var id = toFiniteNumber(row[0]);
+          if (id === null) {
+            return null;
+          }
+          return {
+            id: id,
+            nome: normalizeText(row[1]),
+            status: normalizeText(row[2]),
+            dataCadastro: row[3]
+          };
+        })
+        .filter(function(item) {
+          return item !== null;
+        });
     });
   },
   create: function(nome) {
@@ -329,7 +395,7 @@ var UnidadeService = {
         return { success: false, error: 'Já existe uma unidade com este nome.' };
       }
 
-      var novoId = unidades.length ? Math.max.apply(null, unidades.map(function(u) { return u.id; })) + 1 : 1;
+      var novoId = nextId(unidades, 'id');
       sheet.appendRow([novoId, texto, 'ativa', timestamp()]);
       clearCache(['UNIDADES']);
       LogService.register('SISTEMA', 'Cadastro Unidade', 'Unidade ' + texto + ' cadastrada', '');
@@ -353,23 +419,36 @@ var ArmarioService = {
       var colunas = tipo === 'acompanhante' ? 9 : 10;
       var values = sheet.getRange(2, 1, lastRow - 1, colunas).getValues();
       var data = values
-        .filter(function(row) { return row[0]; })
         .map(function(row) {
+          var id = toFiniteNumber(row[0]);
+          if (id === null) {
+            return null;
+          }
+          var volumes = toFiniteNumber(row[6]);
           var item = {
-            id: row[0],
-            numero: row[1],
-            status: row[2],
-            nomeVisitante: row[3] || '',
-            nomePaciente: row[4] || '',
-            leito: row[5] || '',
-            volumes: row[6] || 0,
-            horaInicio: row[7] || '',
+            id: id,
+            numero: normalizeText(row[1]),
+            status: normalizeText(row[2]),
+            nomeVisitante: normalizeText(row[3]),
+            nomePaciente: normalizeText(row[4]),
+            leito: normalizeText(row[5]),
+            volumes: volumes !== null ? volumes : 0,
+            horaInicio: normalizeText(row[7]),
             tipo: tipo || (categoria === 'Acompanhantes' ? 'acompanhante' : 'visitante')
           };
           if (tipo !== 'acompanhante') {
-            item.horaPrevista = row[8] || '';
+            var horaPrevistaValor = row[8];
+            var dataPrevista = parseDateValue(horaPrevistaValor);
+            if (!dataPrevista && horaPrevistaValor) {
+              var horaConvertida = parseHoraPrevista(horaPrevistaValor);
+              dataPrevista = horaConvertida || null;
+            }
+            item.horaPrevista = dataPrevista ? dataPrevista.toISOString() : normalizeText(horaPrevistaValor);
           }
           return item;
+        })
+        .filter(function(item) {
+          return item !== null;
         });
 
       return { success: true, data: data };
@@ -382,7 +461,14 @@ var ArmarioService = {
     var nomePaciente = normalizeText(params.nomePaciente);
     var leito = normalizeText(params.leito);
     var volumes = sanitizeNumber(params.volumes, 0);
-    var horaPrevista = tipo === 'visitante' ? normalizeText(params.horaPrevista) : '';
+    var horaPrevista = '';
+    if (tipo === 'visitante') {
+      var horaPrevistaData = parseHoraPrevista(params.horaPrevista);
+      if (!horaPrevistaData) {
+        return { success: false, error: 'Informe um horário previsto válido no formato HH:MM.' };
+      }
+      horaPrevista = horaPrevistaData;
+    }
 
     if (!numero) {
       return { success: false, error: 'Informe o número do armário.' };
@@ -404,7 +490,7 @@ var ArmarioService = {
         return { success: false, error: 'Armário já está em uso.' };
       }
 
-      var novoId = existing.length ? Math.max.apply(null, existing.map(function(item) { return item.id; })) + 1 : 1;
+      var novoId = nextId(existing, 'id');
       var linha = [
         novoId,
         numero,
@@ -501,17 +587,25 @@ var ArmarioService = {
         return { success: true, data: [] };
       }
       var values = sheet.getRange(2, 1, lastRow - 1, 7).getValues();
-      var data = values.map(function(row) {
-        return {
-          id: row[0],
-          numero: row[1],
-          tipo: row[2],
-          unidade: row[3],
-          localizacao: row[4],
-          status: row[5],
-          dataCadastro: row[6]
-        };
-      });
+      var data = values
+        .map(function(row) {
+          var id = toFiniteNumber(row[0]);
+          if (id === null) {
+            return null;
+          }
+          return {
+            id: id,
+            numero: normalizeText(row[1]),
+            tipo: normalizeText(row[2]),
+            unidade: normalizeText(row[3]),
+            localizacao: normalizeText(row[4]),
+            status: normalizeText(row[5]),
+            dataCadastro: row[6]
+          };
+        })
+        .filter(function(item) {
+          return item !== null;
+        });
       return { success: true, data: data };
     });
   },
@@ -623,10 +717,10 @@ var ArmarioService = {
         return { success: false, error: 'Nenhum armário foi gerado para cadastro.' };
       }
 
-      var ultimoId = cadastro.length ? Math.max.apply(null, cadastro.map(function(item) { return item.id; })) : 0;
+      var baseId = nextId(cadastro, 'id') - 1;
       novos.forEach(function(numero, index) {
         sheet.appendRow([
-          ultimoId + index + 1,
+          baseId + index + 1,
           numero,
           tipo,
           unidade || 'NAC Eletiva',
@@ -656,21 +750,30 @@ var HistoricoService = {
         return { success: true, data: [] };
       }
       var values = sheet.getRange(2, 1, lastRow - 1, 11).getValues();
-      var data = values.filter(function(row) { return row[0]; }).map(function(row) {
-        return {
-          id: row[0],
-          data: row[1],
-          armario: row[2],
-          nome: row[3],
-          paciente: row[4],
-          leito: row[5],
-          volumes: row[6],
-          horaInicio: row[7],
-          horaFim: row[8],
-          status: row[9],
-          tipo: row[10]
-        };
-      });
+      var data = values
+        .map(function(row) {
+          var id = toFiniteNumber(row[0]);
+          if (id === null) {
+            return null;
+          }
+          var volumes = toFiniteNumber(row[6]);
+          return {
+            id: id,
+            data: row[1],
+            armario: normalizeText(row[2]),
+            nome: normalizeText(row[3]),
+            paciente: normalizeText(row[4]),
+            leito: normalizeText(row[5]),
+            volumes: volumes !== null ? volumes : 0,
+            horaInicio: normalizeText(row[7]),
+            horaFim: normalizeText(row[8]),
+            status: normalizeText(row[9]),
+            tipo: normalizeText(row[10])
+          };
+        })
+        .filter(function(item) {
+          return item !== null;
+        });
       return { success: true, data: data.reverse() };
     });
   },
@@ -678,7 +781,7 @@ var HistoricoService = {
     var sheetName = dados.tipo === 'acompanhante' ? 'Histórico Acompanhantes' : 'Histórico Visitantes';
     var sheet = getSheet(sheetName);
     var historico = HistoricoService.list(dados.tipo).data;
-    var novoId = historico.length ? Math.max.apply(null, historico.map(function(item) { return item.id; })) + 1 : 1;
+    var novoId = nextId(historico, 'id');
     sheet.appendRow([
       novoId,
       timestamp(),
@@ -722,18 +825,26 @@ var UsuarioService = {
         return { success: true, data: [] };
       }
       var values = sheet.getRange(2, 1, lastRow - 1, 8).getValues();
-      var data = values.map(function(row) {
-        return {
-          id: row[0],
-          nome: row[1],
-          email: row[2],
-          perfil: row[3],
-          acessoVisitantes: toBoolean(row[4], false),
-          acessoAcompanhantes: toBoolean(row[5], false),
-          dataCadastro: row[6],
-          status: row[7]
-        };
-      });
+      var data = values
+        .map(function(row) {
+          var id = toFiniteNumber(row[0]);
+          if (id === null) {
+            return null;
+          }
+          return {
+            id: id,
+            nome: normalizeText(row[1]),
+            email: normalizeText(row[2]),
+            perfil: normalizeText(row[3]) || 'usuario',
+            acessoVisitantes: toBoolean(row[4], false),
+            acessoAcompanhantes: toBoolean(row[5], false),
+            dataCadastro: row[6],
+            status: normalizeText(row[7])
+          };
+        })
+        .filter(function(item) {
+          return item !== null;
+        });
       return { success: true, data: data };
     });
   },
@@ -761,7 +872,7 @@ var UsuarioService = {
       }
 
       var sheet = getSheet('Usuários');
-      var novoId = usuarios.length ? Math.max.apply(null, usuarios.map(function(usuario) { return usuario.id; })) + 1 : 1;
+      var novoId = nextId(usuarios, 'id');
       sheet.appendRow([
         novoId,
         nome,
@@ -788,24 +899,23 @@ var NotificacaoService = {
         var armarios = ArmarioService.list(tipo).data;
         armarios.forEach(function(armario) {
           if (armario.status === 'em-uso' && armario.horaPrevista) {
-            try {
-              var horaPrevista = new Date(armario.horaPrevista);
-              var diff = (horaPrevista.getTime() - agora.getTime()) / (1000 * 60);
-              if (diff <= 0) {
-                notificacoes.push({
-                  tipo: 'danger',
-                  titulo: 'Armário ' + armario.numero + ' vencido',
-                  tempo: 'Expirou há ' + Math.abs(Math.round(diff)) + ' minutos'
-                });
-              } else if (diff <= 10) {
-                notificacoes.push({
-                  tipo: 'warning',
-                  titulo: 'Armário ' + armario.numero + ' próximo do horário',
-                  tempo: 'Vencerá em ' + Math.round(diff) + ' minutos'
-                });
-              }
-            } catch (err) {
-              // ignora datas inválidas
+            var horaPrevista = parseDateValue(armario.horaPrevista);
+            if (!horaPrevista) {
+              return;
+            }
+            var diff = (horaPrevista.getTime() - agora.getTime()) / (1000 * 60);
+            if (diff <= 0) {
+              notificacoes.push({
+                tipo: 'danger',
+                titulo: 'Armário ' + armario.numero + ' vencido',
+                tempo: 'Expirou há ' + Math.abs(Math.round(diff)) + ' minutos'
+              });
+            } else if (diff <= 10) {
+              notificacoes.push({
+                tipo: 'warning',
+                titulo: 'Armário ' + armario.numero + ' próximo do horário',
+                tempo: 'Vencerá em ' + Math.round(diff) + ' minutos'
+              });
             }
           }
         });
@@ -840,8 +950,8 @@ var EstatisticaService = {
           }
           if (armario.status === 'em-uso') {
             if (armario.horaPrevista) {
-              try {
-                var horaPrevista = new Date(armario.horaPrevista);
+              var horaPrevista = parseDateValue(armario.horaPrevista);
+              if (horaPrevista) {
                 var diff = (horaPrevista.getTime() - agora.getTime()) / (1000 * 60);
                 if (diff < 0) {
                   estatisticas.vencidos += 1;
@@ -850,7 +960,7 @@ var EstatisticaService = {
                 } else {
                   estatisticas.emUso += 1;
                 }
-              } catch (err) {
+              } else {
                 estatisticas.emUso += 1;
               }
             } else {
