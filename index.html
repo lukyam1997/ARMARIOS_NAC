@@ -504,6 +504,73 @@
   </div>
 </div>
 
+<div
+  class="modal modal-small"
+  id="registro-armario-modal"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="registro-armario-titulo"
+>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h4 class="modal-title" id="registro-armario-titulo">Registrar – Armário</h4>
+      <button class="modal-close" id="registro-armario-modal-close" type="button" aria-label="Fechar">
+        &times;
+      </button>
+    </div>
+    <div class="modal-body">
+      <form id="registro-armario-form">
+        <input id="registro-armario-id" name="armarioId" type="hidden" />
+        <div class="form-group">
+          <label for="registro-nome-visitante">Nome do Visitante</label>
+          <input class="form-control" id="registro-nome-visitante" name="nomeVisitante" type="text" required />
+        </div>
+        <div class="form-group">
+          <label for="registro-telefone">Telefone</label>
+          <input class="form-control" id="registro-telefone" name="telefone" type="tel" required />
+        </div>
+        <div class="form-group">
+          <label for="registro-paciente">Paciente</label>
+          <input class="form-control" id="registro-paciente" name="paciente" type="text" required />
+        </div>
+        <div class="form-group">
+          <label for="registro-leito">Leito</label>
+          <input class="form-control" id="registro-leito" name="leito" type="text" required />
+        </div>
+        <div class="form-group">
+          <label for="registro-volumes">Quantidade de volumes guardados</label>
+          <input
+            class="form-control"
+            id="registro-volumes"
+            name="volumes"
+            type="number"
+            min="1"
+            placeholder="Ex: 2"
+            required
+          />
+        </div>
+        <div class="form-group">
+          <label for="registro-previsao">Previsão de retirada</label>
+          <input
+            class="form-control"
+            id="registro-previsao"
+            name="previsaoRetirada"
+            type="datetime-local"
+            placeholder="dd/mm/aaaa --:--"
+            required
+          />
+        </div>
+      </form>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="registro-armario-cancelar" type="button">Cancelar</button>
+      <button class="btn btn-primary" id="registro-armario-confirmar" type="submit" form="registro-armario-form">
+        Confirmar
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: cadastro de usuário -->
 <div class="modal" id="usuario-modal" role="dialog" aria-modal="true" aria-labelledby="usuario-modal-title">
   <div class="modal-content">
