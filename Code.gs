@@ -129,6 +129,38 @@ function getNotificacoes() {
   return NotificacaoService.list();
 }
 
+function getBootstrapData() {
+  try {
+    var unidades = UnidadeService.list();
+    var cadastroArmarios = ArmarioService.listCadastro();
+    var usuarios = UsuarioService.list();
+    var logs = LogService.list();
+    var notificacoes = NotificacaoService.list();
+    var armariosVisitantes = ArmarioService.list('visitante');
+    var armariosAcompanhantes = ArmarioService.list('acompanhante');
+    var historicoVisitantes = HistoricoService.list('visitante');
+    var historicoAcompanhantes = HistoricoService.list('acompanhante');
+
+    return {
+      success: true,
+      data: {
+        unidades: Array.isArray(unidades) ? unidades : (unidades && unidades.data ? unidades.data : []),
+        cadastroArmarios: cadastroArmarios && Array.isArray(cadastroArmarios.data) ? cadastroArmarios.data : [],
+        usuarios: usuarios && Array.isArray(usuarios.data) ? usuarios.data : [],
+        logs: logs && Array.isArray(logs.data) ? logs.data : [],
+        notificacoes: notificacoes && Array.isArray(notificacoes.data) ? notificacoes.data : [],
+        armariosVisitantes: armariosVisitantes && Array.isArray(armariosVisitantes.data) ? armariosVisitantes.data : [],
+        armariosAcompanhantes: armariosAcompanhantes && Array.isArray(armariosAcompanhantes.data) ? armariosAcompanhantes.data : [],
+        historicoVisitantes: historicoVisitantes && Array.isArray(historicoVisitantes.data) ? historicoVisitantes.data : [],
+        historicoAcompanhantes: historicoAcompanhantes && Array.isArray(historicoAcompanhantes.data) ? historicoAcompanhantes.data : []
+      }
+    };
+  } catch (error) {
+    LogService.register('ERRO', 'getBootstrapData', error.toString(), '');
+    return { success: false, error: error.toString() };
+  }
+}
+
 function getArmarios(params) {
   return ArmarioService.list(params && params.tipo);
 }
