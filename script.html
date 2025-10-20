@@ -1761,23 +1761,159 @@
     }
   }
 
-  function tratarAcoesUsuarios(event) {
-    if (event.target.closest('[data-action="remover"]')) {
-      const linha = event.target.closest('tr');
-      const id = Number(linha.dataset.id);
-      const usuarios = AppState.get('usuarios').filter((usuario) => usuario.id !== id);
+  async function tratarAcoesUsuarios(event) {
+    const botao = event.target.closest('[data-action="remover"]');
+    if (!botao) {
+      return;
+    }
+
+    const linha = botao.closest('tr');
+    if (!linha) {
+      return;
+    }
+
+    const id = Number(linha.dataset.id);
+    if (!Number.isFinite(id)) {
+      return;
+    }
+
+    const nome = linha.querySelector('td:nth-child(2)')?.textContent?.trim() || '';
+    const mensagemConfirmacao = nome
+      ? `Deseja remover o usuário ${nome}?`
+      : 'Deseja remover este usuário?';
+
+    let confirmado = true;
+    if (typeof Swal !== 'undefined') {
+      const resultado = await Swal.fire({
+        title: 'Remover usuário',
+        text: mensagemConfirmacao,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Remover',
+        cancelButtonText: 'Cancelar',
+        focusCancel: true
+      });
+      confirmado = resultado.isConfirmed;
+    } else if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
+      confirmado = window.confirm(mensagemConfirmacao);
+    }
+
+    if (!confirmado) {
+      return;
+    }
+
+    let sucesso = false;
+
+    if (hasAppsScript) {
+      botao.disabled = true;
+      try {
+        const resposta = await ApiClient.call('removerUsuario', { id });
+        if (!resposta || !resposta.success) {
+          throw new Error(resposta?.error || 'Não foi possível remover o usuário.');
+        }
+
+        const usuariosRes = await ApiClient.call('getUsuarios');
+        AppState.set('usuarios', usuariosRes?.data || []);
+        sucesso = true;
+      } catch (error) {
+        console.error('Erro ao remover usuário', error);
+        if (typeof Swal !== 'undefined') {
+          await Swal.fire('Erro', error.message || 'Não foi possível remover o usuário.', 'error');
+        } else if (typeof alert === 'function') {
+          alert(error.message || 'Não foi possível remover o usuário.');
+        }
+      } finally {
+        botao.disabled = false;
+      }
+    } else {
+      const usuarios = (AppState.get('usuarios') || []).filter((usuario) => usuario.id !== id);
       AppState.set('usuarios', usuarios);
+      sucesso = true;
+    }
+
+    if (sucesso) {
       carregarDadosTabelas();
+      if (typeof Swal !== 'undefined') {
+        await Swal.fire('Sucesso', 'Usuário removido com sucesso.', 'success');
+      }
     }
   }
 
-  function tratarAcoesCadastroArmarios(event) {
-    if (event.target.closest('[data-action="remover"]')) {
-      const linha = event.target.closest('tr');
-      const id = Number(linha.dataset.id);
-      const cadastro = AppState.get('cadastroArmarios').filter((item) => item.id !== id);
+  async function tratarAcoesCadastroArmarios(event) {
+    const botao = event.target.closest('[data-action="remover"]');
+    if (!botao) {
+      return;
+    }
+
+    const linha = botao.closest('tr');
+    if (!linha) {
+      return;
+    }
+
+    const id = Number(linha.dataset.id);
+    if (!Number.isFinite(id)) {
+      return;
+    }
+
+    const numero = linha.querySelector('td:nth-child(2)')?.textContent?.trim() || '';
+    const mensagemConfirmacao = numero
+      ? `Deseja remover o armário ${numero} do cadastro?`
+      : 'Deseja remover este armário do cadastro?';
+
+    let confirmado = true;
+    if (typeof Swal !== 'undefined') {
+      const resultado = await Swal.fire({
+        title: 'Remover armário',
+        text: mensagemConfirmacao,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Remover',
+        cancelButtonText: 'Cancelar',
+        focusCancel: true
+      });
+      confirmado = resultado.isConfirmed;
+    } else if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
+      confirmado = window.confirm(mensagemConfirmacao);
+    }
+
+    if (!confirmado) {
+      return;
+    }
+
+    let sucesso = false;
+
+    if (hasAppsScript) {
+      botao.disabled = true;
+      try {
+        const resposta = await ApiClient.call('removerCadastroArmario', { id });
+        if (!resposta || !resposta.success) {
+          throw new Error(resposta?.error || 'Não foi possível remover o armário.');
+        }
+
+        const cadastroAtualizado = await ApiClient.call('getCadastroArmarios');
+        AppState.set('cadastroArmarios', cadastroAtualizado?.data || []);
+        sucesso = true;
+      } catch (error) {
+        console.error('Erro ao remover armário', error);
+        if (typeof Swal !== 'undefined') {
+          await Swal.fire('Erro', error.message || 'Não foi possível remover o armário.', 'error');
+        } else if (typeof alert === 'function') {
+          alert(error.message || 'Não foi possível remover o armário.');
+        }
+      } finally {
+        botao.disabled = false;
+      }
+    } else {
+      const cadastro = (AppState.get('cadastroArmarios') || []).filter((item) => item.id !== id);
       AppState.set('cadastroArmarios', cadastro);
+      sucesso = true;
+    }
+
+    if (sucesso) {
       carregarDadosTabelas();
+      if (typeof Swal !== 'undefined') {
+        await Swal.fire('Sucesso', 'Armário removido com sucesso.', 'success');
+      }
     }
   }
 
