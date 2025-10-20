@@ -1700,6 +1700,7 @@
           const cadastroAtualizado = await ApiClient.call('getCadastroArmarios');
           if (cadastroAtualizado && cadastroAtualizado.success) {
             AppState.set('cadastroArmarios', cadastroAtualizado.data || []);
+            await sincronizarArmarios();
             carregarDadosTabelas();
           }
         } catch (error) {
@@ -1717,21 +1718,65 @@
 
       if (resultado.value.payload && !hasAppsScript) {
         try {
-          const cadastro = AppState.get('cadastroArmarios');
+          const cadastro = AppState.get('cadastroArmarios') || [];
+          const armarios = AppState.get('armarios') || [];
           const existentes = cadastro.map((item) => item.numero);
           const numeros = gerarNumerosParaCadastro(resultado.value.payload, existentes);
-          const ultimoId = cadastro.length ? Math.max(...cadastro.map((item) => item.id)) : 0;
+          const ultimoIdCadastro = cadastro.length
+            ? Math.max(
+                ...cadastro.map((item) => {
+                  const parsed = Number(item.id);
+                  return Number.isFinite(parsed) ? parsed : 0;
+                })
+              )
+            : 0;
+          const ultimoIdArmarios = armarios.length
+            ? Math.max(
+                ...armarios.map((item) => {
+                  const parsed = Number(item.id);
+                  return Number.isFinite(parsed) ? parsed : 0;
+                })
+              )
+            : 0;
+          const numerosArmariosExistentes = new Set(armarios.map((item) => item.numero));
+          const unidadePadrao = resultado.value.payload.unidade || 'NAC Eletiva';
+          const localizacaoPadrao = resultado.value.payload.localizacao || 'Não informado';
+          const tipo = resultado.value.payload.tipo;
+          let incrementoArmario = 0;
           numeros.forEach((numero, index) => {
             cadastro.push({
-              id: ultimoId + index + 1,
+              id: ultimoIdCadastro + index + 1,
               numero,
-              tipo: resultado.value.payload.tipo,
-              unidade: resultado.value.payload.unidade || 'NAC Eletiva',
-              localizacao: resultado.value.payload.localizacao || 'Não informado',
+              tipo,
+              unidade: unidadePadrao,
+              localizacao: localizacaoPadrao,
               status: 'ativo'
             });
+            if (!numerosArmariosExistentes.has(numero)) {
+              incrementoArmario += 1;
+              const novoArmario = {
+                id: ultimoIdArmarios + incrementoArmario,
+                numero,
+                tipo,
+                unidade: unidadePadrao,
+                localizacao: localizacaoPadrao,
+                status: 'livre',
+                nomeVisitante: '',
+                nomePaciente: '',
+                leito: '',
+                volumes: 0,
+                horaInicio: '',
+                termoAplicado: false
+              };
+              if (tipo === 'visitante') {
+                novoArmario.horaPrevista = '';
+              }
+              armarios.push(novoArmario);
+              numerosArmariosExistentes.add(numero);
+            }
           });
           AppState.set('cadastroArmarios', cadastro);
+          AppState.set('armarios', armarios);
           carregarDadosTabelas();
           Swal.fire('Armários cadastrados', `Armários cadastrados: ${numeros.join(', ')}`, 'success');
         } catch (error) {
@@ -1921,6 +1966,7 @@
 
         const cadastroAtualizado = await ApiClient.call('getCadastroArmarios');
         AppState.set('cadastroArmarios', cadastroAtualizado?.data || []);
+        await sincronizarArmarios();
         sucesso = true;
       } catch (error) {
         console.error('Erro ao remover armário', error);
@@ -1935,6 +1981,8 @@
     } else {
       const cadastro = (AppState.get('cadastroArmarios') || []).filter((item) => item.id !== id);
       AppState.set('cadastroArmarios', cadastro);
+      const armarios = (AppState.get('armarios') || []).filter((armario) => armario.numero !== numero);
+      AppState.set('armarios', armarios);
       sucesso = true;
     }
 
