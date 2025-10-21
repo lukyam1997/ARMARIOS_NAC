@@ -240,11 +240,34 @@ function handlePost(e) {
   try {
     var parametros = Object.assign({}, e.parameter || {});
     var action = parametros.action;
+    if (action && typeof action === 'string') {
+      action = action.trim();
+    }
+    var payload = parametros.payload;
+
     delete parametros.action;
+    delete parametros.payload;
+
+    var dados = Object.assign({}, parametros);
+
+    if (payload) {
+      try {
+        var parsedPayload = JSON.parse(payload);
+        if (parsedPayload && typeof parsedPayload === 'object') {
+          if (Array.isArray(parsedPayload)) {
+            dados.payload = parsedPayload;
+          } else {
+            dados = Object.assign({}, dados, parsedPayload);
+          }
+        }
+      } catch (erroPayload) {
+        dados.payloadRaw = payload;
+      }
+    }
 
     var resultado = handleClientRequest({
       action: action,
-      data: parametros
+      data: dados
     });
 
     return ContentService.createTextOutput(JSON.stringify(resultado))
@@ -295,6 +318,9 @@ function normalizarRespostaServidor(resposta) {
 
 function handleClientRequest(request) {
   var action = request && request.action;
+  if (action && typeof action === 'string') {
+    action = action.trim();
+  }
   var data = request && request.data ? request.data : {};
 
   if (!action) {

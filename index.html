@@ -1950,6 +1950,7 @@
 
     <script>
         // Integração com Google Apps Script via google.script.run (sem necessidade de configurar URL)
+        const SCRIPT_URL = <?= JSON.stringify(ScriptApp.getService().getUrl() || '') ?>;
 
         // Estado da aplicação
         let estado = {
@@ -2057,55 +2058,154 @@
 
         // Função para chamar o Google Apps Script
         async function callGoogleScript(action, data = {}) {
+            const acao = typeof action === 'string' ? action.trim() : action;
+
             if (!(window.google && google.script && google.script.run)) {
                 console.error('google.script.run não está disponível no contexto atual');
-                mostrarErro('Erro de integração com o servidor');
-                return { success: false, error: 'google.script.run indisponível' };
+                const fallback = await executarFallbackHttp(acao, data, 'google.script.run indisponível');
+                if (!fallback?.success) {
+                    mostrarErro('google.script.run indisponível');
+                }
+                return fallback;
             }
 
             return new Promise(resolve => {
-                const tratarResposta = (respostaBruta) => {
-                    let respostaNormalizada = respostaBruta;
+                const tratarResposta = async (respostaBruta) => {
+                    try {
+                        const respostaNormalizada = interpretarRespostaBruta(respostaBruta, acao);
 
-                    if (typeof respostaBruta === 'string') {
-                        try {
-                            respostaNormalizada = JSON.parse(respostaBruta);
-                        } catch (erro) {
-                            console.warn(`Não foi possível interpretar resposta textual da ação ${action}:`, erro, respostaBruta);
+                        if (respostaNormalizada && typeof respostaNormalizada === 'object' && 'success' in respostaNormalizada) {
+                            resolve(respostaNormalizada);
+                            return;
                         }
-                    } else if (respostaBruta && typeof respostaBruta === 'object' &&
-                               typeof respostaBruta.success === 'undefined' &&
-                               typeof respostaBruta.getContent === 'function' &&
-                               typeof respostaBruta.getMimeType === 'function') {
-                        try {
-                            const conteudo = respostaBruta.getContent();
-                            respostaNormalizada = conteudo ? JSON.parse(conteudo) : null;
-                        } catch (erro) {
-                            console.warn(`Não foi possível interpretar resposta ContentService da ação ${action}:`, erro);
-                        }
-                    }
 
-                    if (respostaNormalizada && typeof respostaNormalizada === 'object' && 'success' in respostaNormalizada) {
-                        resolve(respostaNormalizada);
-                    } else {
-                        console.error(`Resposta inválida do servidor para ${action}:`, respostaBruta);
-                        mostrarErro(`Resposta inválida do servidor${action ? ` (ação: ${action})` : ''}`);
-                        resolve({ success: false, error: 'Resposta inválida do servidor' });
+                        console.error(`Resposta inválida do servidor para ${acao || '(ação não informada)'}`, respostaBruta);
+                        const fallback = await executarFallbackHttp(acao, data, 'Resposta inválida via google.script.run');
+
+                        if (!fallback?.success) {
+                            mostrarErro(`Resposta inválida do servidor${acao ? ` (ação: ${acao})` : ''}`);
+                        }
+
+                        resolve(fallback);
+                    } catch (erroTratamento) {
+                        console.error(`Erro ao processar resposta da ação ${acao || '(ação não informada)'}`, erroTratamento);
+                        const fallback = await executarFallbackHttp(acao, data, erroTratamento);
+                        if (!fallback?.success) {
+                            mostrarErro(`Resposta inválida do servidor${acao ? ` (ação: ${acao})` : ''}`);
+                        }
+                        resolve(fallback);
                     }
                 };
 
-                google.script.run
-                    .withSuccessHandler(tratarResposta)
-                    .withFailureHandler(error => {
-                        console.error(`Erro ao chamar Google Script (${action}):`, error);
-                        mostrarErro(`Erro de conexão com o servidor${action ? ` (ação: ${action})` : ''}`);
-                        const mensagemErro = typeof error === 'string'
-                            ? error
-                            : (error && error.message) ? error.message : 'Erro desconhecido';
-                        resolve({ success: false, error: mensagemErro });
-                    })
-                    .handleClientRequest({ action, data });
+                const tratarFalha = async (error) => {
+                    try {
+                        console.error(`Erro ao chamar Google Script (${acao || 'ação não informada'}):`, error);
+                        const fallback = await executarFallbackHttp(acao, data, error);
+                        if (!fallback?.success) {
+                            const mensagemErro = typeof error === 'string'
+                                ? error
+                                : (error && error.message) ? error.message : (fallback && fallback.error) ? fallback.error : 'Erro desconhecido';
+                            mostrarErro(mensagemErro || `Erro de conexão com o servidor${acao ? ` (ação: ${acao})` : ''}`);
+                        }
+                        resolve(fallback);
+                    } catch (erroFallback) {
+                        console.error(`Falha ao executar fallback para ${acao || 'ação não informada'}:`, erroFallback);
+                        mostrarErro(`Erro de conexão com o servidor${acao ? ` (ação: ${acao})` : ''}`);
+                        resolve({ success: false, error: erroFallback?.message || String(erroFallback) });
+                    }
+                };
+
+                try {
+                    google.script.run
+                        .withSuccessHandler(tratarResposta)
+                        .withFailureHandler(tratarFalha)
+                        .handleClientRequest({ action: acao, data });
+                } catch (erroExecucao) {
+                    tratarFalha(erroExecucao);
+                }
             });
+        }
+
+        function interpretarRespostaBruta(respostaBruta, action) {
+            let respostaNormalizada = respostaBruta;
+
+            if (typeof respostaBruta === 'string') {
+                try {
+                    respostaNormalizada = JSON.parse(respostaBruta);
+                } catch (erro) {
+                    console.warn(`Não foi possível interpretar resposta textual da ação ${action || 'desconhecida'}:`, erro, respostaBruta);
+                }
+            } else if (respostaBruta && typeof respostaBruta === 'object' &&
+                       typeof respostaBruta.success === 'undefined' &&
+                       typeof respostaBruta.getContent === 'function' &&
+                       typeof respostaBruta.getMimeType === 'function') {
+                try {
+                    const conteudo = respostaBruta.getContent();
+                    respostaNormalizada = conteudo ? JSON.parse(conteudo) : null;
+                } catch (erro) {
+                    console.warn(`Não foi possível interpretar resposta ContentService da ação ${action || 'desconhecida'}:`, erro);
+                }
+            }
+
+            return respostaNormalizada;
+        }
+
+        async function executarFallbackHttp(action, data, motivoFalha) {
+            if (!SCRIPT_URL) {
+                console.error('Fallback HTTP indisponível: SCRIPT_URL não configurado.', { action, motivoFalha });
+                return { success: false, error: 'Endpoint do aplicativo web não está configurado.' };
+            }
+
+            try {
+                let payloadParaEnviar;
+                if (typeof data === 'undefined') {
+                    payloadParaEnviar = {};
+                } else if (data && typeof data === 'object') {
+                    payloadParaEnviar = data;
+                } else {
+                    payloadParaEnviar = { value: data };
+                }
+
+                const parametros = new URLSearchParams();
+                if (action) {
+                    parametros.append('action', action);
+                }
+                parametros.append('payload', JSON.stringify(payloadParaEnviar));
+
+                const resposta = await fetch(SCRIPT_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+                    },
+                    body: parametros.toString(),
+                    credentials: 'include',
+                    redirect: 'follow',
+                    cache: 'no-store'
+                });
+
+                const texto = await resposta.text();
+
+                if (!resposta.ok) {
+                    throw new Error(`HTTP ${resposta.status}: ${texto}`);
+                }
+
+                let json;
+                try {
+                    json = texto ? JSON.parse(texto) : null;
+                } catch (erro) {
+                    throw new Error(`Resposta não é JSON válido: ${texto}`);
+                }
+
+                if (json && typeof json === 'object' && 'success' in json) {
+                    return json;
+                }
+
+                throw new Error('Resposta inválida recebida do servidor');
+            } catch (erro) {
+                const mensagemErro = erro && erro.message ? erro.message : String(erro);
+                console.error(`Falha no fallback HTTP (${action || 'sem ação'}):`, mensagemErro, motivoFalha);
+                return { success: false, error: mensagemErro };
+            }
         }
 
         async function carregarDadosIniciais() {
