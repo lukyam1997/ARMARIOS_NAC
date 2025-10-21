@@ -1951,6 +1951,12 @@
     <script>
         // Integração com Google Apps Script via google.script.run (sem necessidade de configurar URL)
         const SCRIPT_URL = <?= JSON.stringify(ScriptApp.getService().getUrl() || '') ?>;
+        const FALLBACK_SCRIPT_URL = (typeof SCRIPT_URL === 'string'
+            ? SCRIPT_URL.trim()
+                .replace(/^['"]+|['"]+$/g, '')
+                .replace(/^%22/, '')
+                .replace(/%22$/, '')
+            : '') || '';
 
         // Estado da aplicação
         let estado = {
@@ -2151,7 +2157,11 @@
         }
 
         async function executarFallbackHttp(action, data, motivoFalha) {
-            if (!SCRIPT_URL) {
+            const endpoint = typeof FALLBACK_SCRIPT_URL === 'string'
+                ? FALLBACK_SCRIPT_URL.trim()
+                : '';
+
+            if (!endpoint) {
                 console.error('Fallback HTTP indisponível: SCRIPT_URL não configurado.', { action, motivoFalha });
                 return { success: false, error: 'Endpoint do aplicativo web não está configurado.' };
             }
@@ -2172,7 +2182,7 @@
                 }
                 parametros.append('payload', JSON.stringify(payloadParaEnviar));
 
-                const resposta = await fetch(SCRIPT_URL, {
+                const resposta = await fetch(endpoint, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
@@ -2210,27 +2220,42 @@
 
         async function carregarDadosIniciais() {
             try {
-                const verificacao = await callGoogleScript('verificarInicializacao');
+                const resposta = await callGoogleScript('bootstrapSistema', { tipoUsuario: estado.perfilAtual });
 
-                if (!verificacao.success) {
-                    throw new Error(verificacao.error || 'Falha ao verificar a configuração inicial');
+                if (!resposta?.success) {
+                    throw new Error(resposta?.error || 'Erro ao inicializar o sistema');
                 }
 
-                if (!verificacao.inicializado) {
-                    const inicializacao = await callGoogleScript('inicializarPlanilha');
+                const dados = resposta.data || {};
+                const armariosVisitantes = Array.isArray(dados.armarios?.visitante) ? dados.armarios.visitante : [];
+                const armariosAcompanhantes = Array.isArray(dados.armarios?.acompanhante) ? dados.armarios.acompanhante : [];
 
-                    if (!inicializacao.success) {
-                        throw new Error(inicializacao.error || 'Não foi possível inicializar a planilha padrão');
-                    }
-                }
+                const armarios = [];
 
-                await Promise.all([
-                    carregarArmarios(),
-                    carregarUnidades(),
-                    carregarUsuarios(),
-                    carregarEstatisticas(),
-                    carregarNotificacoes()
-                ]);
+                armariosVisitantes.forEach(armario => {
+                    armarios.push({ ...armario, tipo: 'visitante' });
+                });
+
+                armariosAcompanhantes.forEach(armario => {
+                    armarios.push({ ...armario, tipo: 'acompanhante' });
+                });
+
+                estado.armarios = armarios;
+                estado.cadastroArmarios = Array.isArray(dados.cadastroArmarios) ? dados.cadastroArmarios : [];
+                estado.unidades = Array.isArray(dados.unidades) ? dados.unidades : [];
+                estado.usuarios = Array.isArray(dados.usuarios) ? dados.usuarios : [];
+                estado.notificacoes = Array.isArray(dados.notificacoes) ? dados.notificacoes : [];
+
+                atualizarSeletoresUnidade();
+
+                const estatisticas = dados.estatisticas || { livres: 0, emUso: 0, proximo: 0, vencidos: 0 };
+                elementos.cardsCount.livres.textContent = estatisticas.livres || 0;
+                elementos.cardsCount.emUso.textContent = estatisticas.emUso || 0;
+                elementos.cardsCount.proximo.textContent = estatisticas.proximo || 0;
+                elementos.cardsCount.vencidos.textContent = estatisticas.vencidos || 0;
+
+                elementos.notificationBadge.textContent = estado.notificacoes.length;
+                atualizarPainelNotificacoes();
 
                 atualizarInterface();
 
@@ -2690,16 +2715,18 @@
             }
         }
 
-        async function carregarTabelaVisitantes(unidadeFiltro) {
+        async function carregarTabelaVisitantes(unidadeFiltro, { forcarAtualizacao = false } = {}) {
             const tbodyVisitantes = document.querySelector('#tabela-visitantes tbody');
             if (!tbodyVisitantes) return;
 
-            const resultado = await callGoogleScript('getArmarios', { tipo: 'visitante' });
-            if (!resultado.success) return;
+            if (forcarAtualizacao || !estado.armarios.some(a => a.tipo === 'visitante')) {
+                await carregarArmarios();
+            }
 
             tbodyVisitantes.innerHTML = '';
 
-            resultado.data
+            estado.armarios
+                .filter(a => a.tipo === 'visitante')
                 .filter(a => unidadeFiltro === 'todas' || a.unidade === unidadeFiltro)
                 .forEach(armario => {
                     const tr = document.createElement('tr');
@@ -2724,16 +2751,18 @@
                 });
         }
 
-        async function carregarTabelaAcompanhantes(unidadeFiltro) {
+        async function carregarTabelaAcompanhantes(unidadeFiltro, { forcarAtualizacao = false } = {}) {
             const tbodyAcompanhantes = document.querySelector('#tabela-acompanhantes tbody');
             if (!tbodyAcompanhantes) return;
 
-            const resultado = await callGoogleScript('getArmarios', { tipo: 'acompanhante' });
-            if (!resultado.success) return;
+            if (forcarAtualizacao || !estado.armarios.some(a => a.tipo === 'acompanhante')) {
+                await carregarArmarios();
+            }
 
             tbodyAcompanhantes.innerHTML = '';
 
-            resultado.data
+            estado.armarios
+                .filter(a => a.tipo === 'acompanhante')
                 .filter(a => unidadeFiltro === 'todas' || a.unidade === unidadeFiltro)
                 .forEach(armario => {
                     const tr = document.createElement('tr');
@@ -2854,16 +2883,19 @@
             }
         }
 
-        async function carregarCadastroArmarios(unidadeFiltro) {
+        async function carregarCadastroArmarios(unidadeFiltro, { forcarAtualizacao = false } = {}) {
             const tbody = document.querySelector('#tabela-cadastro-armarios tbody');
             if (!tbody) return;
 
-            const resultado = await callGoogleScript('getCadastroArmarios');
-            if (!resultado.success) return;
+            if (forcarAtualizacao || !Array.isArray(estado.cadastroArmarios) || !estado.cadastroArmarios.length) {
+                const resultado = await callGoogleScript('getCadastroArmarios');
+                if (!resultado.success) return;
+                estado.cadastroArmarios = Array.isArray(resultado.data) ? resultado.data : [];
+            }
 
             tbody.innerHTML = '';
 
-            resultado.data
+            estado.cadastroArmarios
                 .filter(armario => unidadeFiltro === 'todas' || armario.unidade === unidadeFiltro)
                 .forEach(armario => {
                     const tr = document.createElement('tr');
@@ -3294,6 +3326,27 @@
             const cadastroResultado = await callGoogleScript('cadastrarArmarioFisico', dados);
 
             if (cadastroResultado.success) {
+                if (Array.isArray(cadastroResultado.ids) && cadastroResultado.ids.length) {
+                    const novosArmariosFisicos = cadastroResultado.ids.map((novoId, indice) => ({
+                        id: novoId,
+                        numero: Array.isArray(cadastroResultado.numeros)
+                            ? cadastroResultado.numeros[indice]
+                            : undefined,
+                        tipo: dados.tipo,
+                        unidade: dados.unidade,
+                        localizacao: dados.localizacao,
+                        status: 'ativo',
+                        dataCadastro: new Date()
+                    })).filter(novo => novo.id && novo.numero);
+
+                    if (novosArmariosFisicos.length) {
+                        if (!Array.isArray(estado.cadastroArmarios)) {
+                            estado.cadastroArmarios = [];
+                        }
+                        estado.cadastroArmarios.push(...novosArmariosFisicos);
+                    }
+                }
+
                 // Recarregar dados
                 await carregarArmarios();
                 await carregarEstatisticas();
@@ -4026,17 +4079,19 @@
             estado.notificacoes.forEach(notificacao => {
                 const item = document.createElement('div');
                 item.className = 'notification-item';
-                
+
+                const tempoDescricao = notificacao.tempo || notificacao.mensagem || '';
+
                 item.innerHTML = `
                     <div class="notification-icon ${notificacao.tipo}">
                         <i class="fas ${notificacao.tipo === 'danger' ? 'fa-exclamation' : 'fa-clock'}"></i>
                     </div>
                     <div class="notification-content">
                         <div class="notification-title">${notificacao.titulo}</div>
-                        <div class="notification-time">${notificacao.tempo}</div>
+                        <div class="notification-time">${tempoDescricao}</div>
                     </div>
                 `;
-                
+
                 notificationList.appendChild(item);
             });
         }
