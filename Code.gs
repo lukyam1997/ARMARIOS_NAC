@@ -256,6 +256,43 @@ function handlePost(e) {
   }
 }
 
+function normalizarRespostaServidor(resposta) {
+  if (resposta === null || typeof resposta === 'undefined') {
+    return resposta;
+  }
+
+  // Respostas enviadas como texto via ContentService
+  if (typeof resposta === 'object' && resposta !== null &&
+      typeof resposta.getContent === 'function' && typeof resposta.getMimeType === 'function') {
+    try {
+      var conteudo = resposta.getContent();
+      if (conteudo) {
+        var json = JSON.parse(conteudo);
+        if (json && typeof json === 'object') {
+          return json;
+        }
+      }
+      return { success: false, error: conteudo || 'Resposta textual vazia' };
+    } catch (erroTextual) {
+      return { success: false, error: 'Não foi possível interpretar resposta textual: ' + erroTextual };
+    }
+  }
+
+  if (typeof resposta === 'string') {
+    try {
+      var jsonStr = JSON.parse(resposta);
+      if (jsonStr && typeof jsonStr === 'object') {
+        return jsonStr;
+      }
+      return { success: false, error: resposta };
+    } catch (erroString) {
+      return { success: false, error: resposta };
+    }
+  }
+
+  return resposta;
+}
+
 function handleClientRequest(request) {
   var action = request && request.action;
   var data = request && request.data ? request.data : {};
@@ -353,6 +390,8 @@ function handleClientRequest(request) {
         resultado = { success: false, error: 'Ação não reconhecida: ' + action };
         break;
     }
+
+    resultado = normalizarRespostaServidor(resultado);
 
     if (!resultado || typeof resultado !== 'object' || typeof resultado.success === 'undefined') {
       registrarLog('ERRO', 'Resposta inválida gerada pela ação: ' + action);
