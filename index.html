@@ -144,6 +144,50 @@
             gap: 20px;
         }
 
+        .header-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            background-color: white;
+            color: var(--primary-color);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .header-button i {
+            pointer-events: none;
+        }
+
+        .header-button:hover {
+            background-color: var(--primary-color);
+            color: white;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+        }
+
+        .header-button.connection-warning {
+            color: var(--warning-color);
+            border-color: rgba(255, 193, 7, 0.6);
+        }
+
+        .header-button.connection-error {
+            color: var(--danger-color);
+            border-color: rgba(220, 53, 69, 0.6);
+            animation: pulse-connection 1.2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-connection {
+            0%, 100% {
+                box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.3);
+            }
+            50% {
+                box-shadow: 0 0 0 6px rgba(220, 53, 69, 0);
+            }
+        }
+
         .header-selectors {
             display: flex;
             align-items: flex-end;
@@ -1251,6 +1295,9 @@
                         </select>
                     </div>
                 </div>
+                <button class="header-button" id="script-config-button" title="Configurar conexão com o servidor">
+                    <i class="fas fa-plug"></i>
+                </button>
                 <div class="notification-bell" id="notification-bell">
                     <i class="fas fa-bell"></i>
                     <span class="notification-badge">3</span>
@@ -1949,8 +1996,74 @@
     </div>
 
     <script>
-        // URL do Google Apps Script - ATUALIZE COM SUA URL
-        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzx7LJ_XDkU0hK1EjjjdeAX1FyTo5NASVVIzyGKpbJ1Lrn0DgQDJQIWHLb5LFsOhHYz/exec';
+        const DEFAULT_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzx7LJ_XDkU0hK1EjjjdeAX1FyTo5NASVVIzyGKpbJ1Lrn0DgQDJQIWHLb5LFsOhHYz/exec';
+        let scriptUrl = obterScriptUrlInicial();
+        let configurandoScriptUrl = false;
+        let erroConexaoJaNotificado = false;
+        let ultimaUrlRegistrada = null;
+
+        function obterScriptUrlInicial() {
+            try {
+                const params = new URLSearchParams(window.location.search);
+                const urlParametro = params.get('scriptUrl');
+                if (urlParametro && validarUrl(urlParametro)) {
+                    localStorage.setItem('scriptUrl', urlParametro);
+                    return urlParametro;
+                }
+            } catch (error) {
+                console.warn('Não foi possível ler o parâmetro scriptUrl da URL.', error);
+            }
+
+            const { origin, pathname, host, search } = window.location;
+            const dominio = host || '';
+
+            if (/script\.google\.com$/.test(dominio) && pathname.includes('/macros/')) {
+                return `${origin}${pathname}`.split('#')[0];
+            }
+
+            if (/script\.googleusercontent\.com$/.test(dominio)) {
+                try {
+                    const paramsAtual = new URLSearchParams(search);
+                    const identificador = paramsAtual.get('lib');
+                    if (identificador) {
+                        return `https://script.google.com/macros/s/${identificador}/exec`;
+                    }
+                } catch (error) {
+                    console.warn('Não foi possível interpretar os parâmetros da URL atual.', error);
+                }
+                return `${origin}${pathname}`.split('#')[0];
+            }
+
+            try {
+                const armazenada = localStorage.getItem('scriptUrl');
+                if (armazenada) {
+                    if (validarUrl(armazenada)) {
+                        return armazenada;
+                    }
+                    localStorage.removeItem('scriptUrl');
+                }
+            } catch (error) {
+                console.warn('Não foi possível acessar a configuração salva da URL do script.', error);
+            }
+
+            return DEFAULT_SCRIPT_URL;
+        }
+
+        function validarUrl(url) {
+            if (!url) return false;
+            try {
+                const parsed = new URL(url);
+                return ['http:', 'https:'].includes(parsed.protocol);
+            } catch (error) {
+                return false;
+            }
+        }
+
+        function escaparHtml(texto) {
+            const temp = document.createElement('div');
+            temp.textContent = texto ?? '';
+            return temp.innerHTML;
+        }
 
         // Estado da aplicação
         let estado = {
@@ -1975,6 +2088,7 @@
             notificationBell: document.getElementById('notification-bell'),
             notificationPanel: document.getElementById('notification-panel'),
             notificationBadge: document.querySelector('.notification-badge'),
+            scriptConfigButton: document.getElementById('script-config-button'),
             armariosContainer: document.getElementById('armarios-container'),
             armarioModal: document.getElementById('armario-modal'),
             usuarioModal: document.getElementById('usuario-modal'),
@@ -2041,6 +2155,8 @@
             tabelaUnidadesBody: document.querySelector('#tabela-unidades tbody')
         };
 
+        atualizarIndicadorScriptUrl();
+
         const termoSteps = Array.from(document.querySelectorAll('#termo-form .wizard-step'));
         let termoPassoAtual = 0;
         let termoArmarioAtual = null;
@@ -2057,27 +2173,174 @@
         });
 
         // Função para chamar o Google Apps Script
-        async function callGoogleScript(action, data = {}) {
+        async function callGoogleScript(action, data = {}, options = { retry: true }) {
             try {
                 const formData = new FormData();
                 formData.append('action', action);
-                
-                // Adicionar dados ao formData
+
                 Object.keys(data).forEach(key => {
                     formData.append(key, data[key]);
                 });
-                
-                const response = await fetch(SCRIPT_URL, {
+
+                const response = await fetch(scriptUrl, {
                     method: 'POST',
                     body: formData
                 });
-                
-                const result = await response.json();
-                return result;
+
+                const responseText = await response.text();
+                let payload = null;
+
+                if (responseText) {
+                    try {
+                        payload = JSON.parse(responseText);
+                    } catch (parseError) {
+                        console.warn('Não foi possível converter a resposta em JSON.', parseError);
+                    }
+                }
+
+                if (!response.ok) {
+                    const mensagemErro = (payload && (payload.error || payload.message)) || responseText || `Erro ${response.status}: ${response.statusText}`;
+                    throw new Error(mensagemErro);
+                }
+
+                if (payload === null) {
+                    throw new Error('Resposta do servidor em formato inesperado.');
+                }
+
+                limparFalhaConexaoVisual();
+                erroConexaoJaNotificado = false;
+                return payload;
             } catch (error) {
                 console.error('Erro ao chamar Google Script:', error);
-                mostrarErro('Erro de conexão com o servidor');
+
+                if (error instanceof TypeError) {
+                    marcarFalhaConexaoVisual();
+
+                    if (options.retry !== false) {
+                        const reconfigurado = await tentarReconfigurarScriptUrl(error);
+                        if (reconfigurado) {
+                            erroConexaoJaNotificado = false;
+                            return callGoogleScript(action, data, { retry: false });
+                        }
+                    }
+
+                    if (!erroConexaoJaNotificado) {
+                        const informacoes = [];
+                        if (scriptUrl) {
+                            informacoes.push(`Não foi possível conectar ao endereço configurado.<br><small style="display:block;margin-top:8px;">URL atual: <code>${escaparHtml(scriptUrl)}</code></small>`);
+                        } else {
+                            informacoes.push('Nenhum endereço do servidor está configurado.');
+                        }
+                        informacoes.push('<span style="display:block;margin-top:8px;">Clique no ícone <i class="fas fa-plug"></i> ao lado do sino para atualizar a URL.</span>');
+                        mostrarErro('Erro de conexão com o servidor', informacoes.join(''));
+                        erroConexaoJaNotificado = true;
+                    }
+                } else {
+                    mostrarErro('Erro ao processar requisição', escaparHtml(error.message || 'Erro desconhecido.'));
+                }
+
                 return { success: false, error: error.message };
+            }
+        }
+
+        function atualizarIndicadorScriptUrl() {
+            if (!elementos || !elementos.scriptConfigButton) return;
+            const botao = elementos.scriptConfigButton;
+            const urlAtual = scriptUrl || 'não configurado';
+            if (ultimaUrlRegistrada !== scriptUrl) {
+                ultimaUrlRegistrada = scriptUrl;
+                console.info('[Sistema de Armários] Servidor configurado:', scriptUrl || '(não configurado)');
+            }
+            botao.classList.toggle('connection-warning', !scriptUrl || scriptUrl === DEFAULT_SCRIPT_URL);
+            botao.setAttribute('title', `Servidor: ${urlAtual}\nClique para alterar a conexão`);
+        }
+
+        function marcarFalhaConexaoVisual() {
+            if (!elementos || !elementos.scriptConfigButton) return;
+            const botao = elementos.scriptConfigButton;
+            botao.classList.add('connection-error');
+            botao.setAttribute('title', 'Falha de conexão. Clique para configurar o servidor.');
+        }
+
+        function limparFalhaConexaoVisual() {
+            if (!elementos || !elementos.scriptConfigButton) return;
+            const botao = elementos.scriptConfigButton;
+            botao.classList.remove('connection-error');
+            atualizarIndicadorScriptUrl();
+        }
+
+        async function solicitarConfiguracaoScriptUrl(mensagemExtra = '') {
+            const { value: novaUrl } = await Swal.fire({
+                title: 'Configurar conexão',
+                html: `
+                    <p style="margin-bottom:8px;">Informe a URL do Web App publicado no Google Apps Script.</p>
+                    <p style="margin-bottom:8px;font-size:0.85rem;color:#555;">A configuração fica salva apenas neste navegador.</p>
+                    ${mensagemExtra ? `<div style="font-size:0.85rem;color:#555;">${mensagemExtra}</div>` : ''}
+                `,
+                input: 'url',
+                inputValue: scriptUrl && scriptUrl !== DEFAULT_SCRIPT_URL ? scriptUrl : '',
+                inputPlaceholder: 'https://script.google.com/macros/s/SEU_ID/exec',
+                showCancelButton: true,
+                confirmButtonText: 'Salvar',
+                cancelButtonText: 'Cancelar',
+                focusConfirm: false,
+                inputAttributes: {
+                    autocapitalize: 'off',
+                    spellcheck: 'false'
+                },
+                preConfirm: (valor) => {
+                    const urlLimpa = (valor || '').trim();
+                    if (!urlLimpa) {
+                        Swal.showValidationMessage('Informe a URL do Web App.');
+                        return false;
+                    }
+                    if (!validarUrl(urlLimpa)) {
+                        Swal.showValidationMessage('Informe uma URL válida iniciando com http:// ou https://');
+                        return false;
+                    }
+                    return urlLimpa;
+                }
+            });
+
+            if (novaUrl) {
+                scriptUrl = novaUrl;
+                try {
+                    localStorage.setItem('scriptUrl', novaUrl);
+                } catch (error) {
+                    console.warn('Não foi possível salvar a URL do script no navegador.', error);
+                }
+
+                erroConexaoJaNotificado = false;
+                limparFalhaConexaoVisual();
+                return novaUrl;
+            }
+
+            return null;
+        }
+
+        async function tentarReconfigurarScriptUrl(erro) {
+            if (configurandoScriptUrl) {
+                return false;
+            }
+
+            configurandoScriptUrl = true;
+            try {
+                const partesMensagem = [];
+                if (scriptUrl) {
+                    partesMensagem.push(`Endereço atual: <code>${escaparHtml(scriptUrl)}</code>`);
+                } else {
+                    partesMensagem.push('Nenhum endereço configurado no momento.');
+                }
+
+                if (erro && erro.message) {
+                    partesMensagem.push(`<small style="display:block;margin-top:6px;color:#777;">${escaparHtml(erro.message)}</small>`);
+                }
+
+                const mensagemExtra = partesMensagem.join('');
+                const novaUrl = await solicitarConfiguracaoScriptUrl(mensagemExtra);
+                return Boolean(novaUrl);
+            } finally {
+                configurandoScriptUrl = false;
             }
         }
 
@@ -2202,13 +2465,20 @@
             });
         }
 
-        function mostrarErro(mensagem) {
-            Swal.fire({
+        function mostrarErro(mensagem, detalhesHtml = '') {
+            const config = {
                 title: 'Erro',
-                text: mensagem,
                 icon: 'error',
                 confirmButtonText: 'OK'
-            });
+            };
+
+            if (detalhesHtml) {
+                config.html = `<p style="margin-bottom:8px;">${escaparHtml(mensagem)}</p><div style="font-size:0.9rem;color:#555;">${detalhesHtml}</div>`;
+            } else {
+                config.text = mensagem;
+            }
+
+            Swal.fire(config);
         }
 
         function mostrarSucesso(mensagem) {
@@ -2236,6 +2506,16 @@
                     estado.unidadeAtual = this.value;
                     atualizarInterface();
                     carregarDadosTabelas();
+                });
+            }
+
+            if (elementos.scriptConfigButton) {
+                elementos.scriptConfigButton.addEventListener('click', async () => {
+                    const urlAnterior = scriptUrl;
+                    const novaUrl = await solicitarConfiguracaoScriptUrl();
+                    if (novaUrl && novaUrl !== urlAnterior) {
+                        mostrarSucesso('Endereço do servidor atualizado com sucesso!');
+                    }
                 });
             }
 
