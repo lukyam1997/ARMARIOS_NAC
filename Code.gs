@@ -406,6 +406,10 @@ function handleClientRequest(request) {
         resultado = salvarMovimentacao(data);
         break;
 
+      case 'bootstrapSistema':
+        resultado = bootstrapSistema(data.tipoUsuario);
+        break;
+
       case 'verificarInicializacao':
         resultado = verificarInicializacao();
         break;
@@ -1502,18 +1506,31 @@ function getLogs() {
 }
 
 // Funções para notificações
-function getNotificacoes() {
+function getNotificacoes(armariosPreCarregados) {
   try {
     var agora = new Date();
     var notificacoes = [];
-    
+
     // Verificar armários vencidos e próximos do vencimento
-    var tipos = ['visitante', 'acompanhante'];
-    
+    var tipos;
+
+    if (armariosPreCarregados && typeof armariosPreCarregados === 'object') {
+      tipos = Object.keys(armariosPreCarregados);
+    } else {
+      tipos = ['visitante', 'acompanhante'];
+    }
+
     tipos.forEach(function(tipo) {
-      var armarios = getArmarios(tipo);
-      if (armarios.success) {
-        armarios.data.forEach(function(armario) {
+      var respostaArmarios;
+
+      if (armariosPreCarregados && typeof armariosPreCarregados === 'object') {
+        respostaArmarios = { success: true, data: armariosPreCarregados[tipo] || [] };
+      } else {
+        respostaArmarios = getArmarios(tipo);
+      }
+
+      if (respostaArmarios.success) {
+        respostaArmarios.data.forEach(function(armario) {
           if (armario.status === 'em-uso' && armario.horaPrevista) {
             try {
               // Converter hora prevista para objeto Date
@@ -1559,6 +1576,8 @@ function getNotificacoes() {
 
 // Função para obter estatísticas do dashboard
 function getEstatisticasDashboard(tipoUsuario) {
+  var armariosPreCarregados = arguments.length > 1 ? arguments[1] : null;
+
   try {
     var estatisticas = {
       livres: 0,
@@ -1566,7 +1585,7 @@ function getEstatisticasDashboard(tipoUsuario) {
       proximo: 0,
       vencidos: 0
     };
-    
+
     var tipos = [];
     
     // Definir quais tipos de armário o usuário pode ver
@@ -1581,9 +1600,16 @@ function getEstatisticasDashboard(tipoUsuario) {
     var agora = new Date();
     
     tipos.forEach(function(tipo) {
-      var armarios = getArmarios(tipo);
-      if (armarios.success) {
-        armarios.data.forEach(function(armario) {
+      var respostaArmarios;
+
+      if (armariosPreCarregados && typeof armariosPreCarregados === 'object') {
+        respostaArmarios = { success: true, data: armariosPreCarregados[tipo] || [] };
+      } else {
+        respostaArmarios = getArmarios(tipo);
+      }
+
+      if (respostaArmarios.success) {
+        respostaArmarios.data.forEach(function(armario) {
           if (armario.status === 'livre') {
             estatisticas.livres++;
           } else if (armario.status === 'em-uso') {
@@ -1639,6 +1665,80 @@ function verificarInicializacao() {
       return { success: true, inicializado: false };
     }
   }
-  
+
   return { success: true, inicializado: true };
+}
+
+function bootstrapSistema(tipoUsuario) {
+  try {
+    var verificacao = verificarInicializacao();
+    if (!verificacao.success) {
+      return verificacao;
+    }
+
+    if (!verificacao.inicializado) {
+      var inicializacao = inicializarPlanilha();
+      if (!inicializacao.success) {
+        return inicializacao;
+      }
+    }
+
+    var armariosVisitantes = getArmarios('visitante');
+    if (!armariosVisitantes.success) {
+      return armariosVisitantes;
+    }
+
+    var armariosAcompanhantes = getArmarios('acompanhante');
+    if (!armariosAcompanhantes.success) {
+      return armariosAcompanhantes;
+    }
+
+    var cadastroArmarios = getCadastroArmarios();
+    if (!cadastroArmarios.success) {
+      return cadastroArmarios;
+    }
+
+    var unidades = getUnidades();
+    if (!unidades.success) {
+      return unidades;
+    }
+
+    var usuarios = getUsuarios();
+    if (!usuarios.success) {
+      return usuarios;
+    }
+
+    var armariosPorTipo = {
+      visitante: armariosVisitantes.data || [],
+      acompanhante: armariosAcompanhantes.data || []
+    };
+
+    var estatisticas = getEstatisticasDashboard(tipoUsuario || 'admin', armariosPorTipo);
+    if (!estatisticas.success) {
+      return estatisticas;
+    }
+
+    var notificacoes = getNotificacoes(armariosPorTipo);
+    if (!notificacoes.success) {
+      return notificacoes;
+    }
+
+    registrarLog('SISTEMA', 'Bootstrap inicial executado');
+
+    return {
+      success: true,
+      data: {
+        armarios: armariosPorTipo,
+        cadastroArmarios: cadastroArmarios.data || [],
+        unidades: unidades.data || [],
+        usuarios: usuarios.data || [],
+        notificacoes: notificacoes.data || [],
+        estatisticas: estatisticas.data || { livres: 0, emUso: 0, proximo: 0, vencidos: 0 }
+      }
+    };
+
+  } catch (error) {
+    registrarLog('ERRO', `Erro no bootstrap do sistema: ${error.toString()}`);
+    return { success: false, error: error.toString() };
+  }
 }
