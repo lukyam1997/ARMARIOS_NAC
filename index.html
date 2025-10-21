@@ -1949,15 +1949,6 @@
     </div>
 
     <script>
-        // Integração com Google Apps Script via google.script.run (sem necessidade de configurar URL)
-        const SCRIPT_URL = <?= JSON.stringify(ScriptApp.getService().getUrl() || '') ?>;
-        const FALLBACK_SCRIPT_URL = (typeof SCRIPT_URL === 'string'
-            ? SCRIPT_URL.trim()
-                .replace(/^['"]+|['"]+$/g, '')
-                .replace(/^%22/, '')
-                .replace(/%22$/, '')
-            : '') || '';
-
         // Estado da aplicação
         let estado = {
             perfilAtual: 'admin',
@@ -2067,16 +2058,14 @@
             const acao = typeof action === 'string' ? action.trim() : action;
 
             if (!(window.google && google.script && google.script.run)) {
-                console.error('google.script.run não está disponível no contexto atual');
-                const fallback = await executarFallbackHttp(acao, data, 'google.script.run indisponível');
-                if (!fallback?.success) {
-                    mostrarErro('google.script.run indisponível');
-                }
-                return fallback;
+                const mensagem = 'google.script.run indisponível';
+                console.error(`${mensagem}.`);
+                mostrarErro(mensagem);
+                return { success: false, error: mensagem };
             }
 
             return new Promise(resolve => {
-                const tratarResposta = async (respostaBruta) => {
+                const tratarResposta = (respostaBruta) => {
                     try {
                         const respostaNormalizada = interpretarRespostaBruta(respostaBruta, acao);
 
@@ -2085,40 +2074,26 @@
                             return;
                         }
 
-                        console.error(`Resposta inválida do servidor para ${acao || '(ação não informada)'}`, respostaBruta);
-                        const fallback = await executarFallbackHttp(acao, data, 'Resposta inválida via google.script.run');
-
-                        if (!fallback?.success) {
-                            mostrarErro(`Resposta inválida do servidor${acao ? ` (ação: ${acao})` : ''}`);
-                        }
-
-                        resolve(fallback);
+                        const mensagemErro = `Resposta inválida do servidor${acao ? ` (ação: ${acao})` : ''}`;
+                        console.error(`${mensagemErro}:`, respostaBruta);
+                        mostrarErro(mensagemErro);
+                        resolve({ success: false, error: mensagemErro });
                     } catch (erroTratamento) {
-                        console.error(`Erro ao processar resposta da ação ${acao || '(ação não informada)'}`, erroTratamento);
-                        const fallback = await executarFallbackHttp(acao, data, erroTratamento);
-                        if (!fallback?.success) {
-                            mostrarErro(`Resposta inválida do servidor${acao ? ` (ação: ${acao})` : ''}`);
-                        }
-                        resolve(fallback);
+                        const mensagemErro = `Erro ao processar resposta${acao ? ` da ação ${acao}` : ''}: ${erroTratamento?.message || erroTratamento}`;
+                        console.error(mensagemErro, erroTratamento);
+                        mostrarErro(mensagemErro);
+                        resolve({ success: false, error: mensagemErro });
                     }
                 };
 
-                const tratarFalha = async (error) => {
-                    try {
-                        console.error(`Erro ao chamar Google Script (${acao || 'ação não informada'}):`, error);
-                        const fallback = await executarFallbackHttp(acao, data, error);
-                        if (!fallback?.success) {
-                            const mensagemErro = typeof error === 'string'
-                                ? error
-                                : (error && error.message) ? error.message : (fallback && fallback.error) ? fallback.error : 'Erro desconhecido';
-                            mostrarErro(mensagemErro || `Erro de conexão com o servidor${acao ? ` (ação: ${acao})` : ''}`);
-                        }
-                        resolve(fallback);
-                    } catch (erroFallback) {
-                        console.error(`Falha ao executar fallback para ${acao || 'ação não informada'}:`, erroFallback);
-                        mostrarErro(`Erro de conexão com o servidor${acao ? ` (ação: ${acao})` : ''}`);
-                        resolve({ success: false, error: erroFallback?.message || String(erroFallback) });
-                    }
+                const tratarFalha = (error) => {
+                    console.error(`Erro ao chamar Google Script (${acao || 'ação não informada'}):`, error);
+                    const mensagemErroBase = `Erro de conexão com o servidor${acao ? ` (ação: ${acao})` : ''}`;
+                    const mensagemErro = typeof error === 'string'
+                        ? error
+                        : (error && error.message) ? error.message : mensagemErroBase;
+                    mostrarErro(mensagemErro || mensagemErroBase);
+                    resolve({ success: false, error: mensagemErro || mensagemErroBase });
                 };
 
                 try {
@@ -2154,68 +2129,6 @@
             }
 
             return respostaNormalizada;
-        }
-
-        async function executarFallbackHttp(action, data, motivoFalha) {
-            const endpoint = typeof FALLBACK_SCRIPT_URL === 'string'
-                ? FALLBACK_SCRIPT_URL.trim()
-                : '';
-
-            if (!endpoint) {
-                console.error('Fallback HTTP indisponível: SCRIPT_URL não configurado.', { action, motivoFalha });
-                return { success: false, error: 'Endpoint do aplicativo web não está configurado.' };
-            }
-
-            try {
-                let payloadParaEnviar;
-                if (typeof data === 'undefined') {
-                    payloadParaEnviar = {};
-                } else if (data && typeof data === 'object') {
-                    payloadParaEnviar = data;
-                } else {
-                    payloadParaEnviar = { value: data };
-                }
-
-                const parametros = new URLSearchParams();
-                if (action) {
-                    parametros.append('action', action);
-                }
-                parametros.append('payload', JSON.stringify(payloadParaEnviar));
-
-                const resposta = await fetch(endpoint, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
-                    },
-                    body: parametros.toString(),
-                    credentials: 'include',
-                    redirect: 'follow',
-                    cache: 'no-store'
-                });
-
-                const texto = await resposta.text();
-
-                if (!resposta.ok) {
-                    throw new Error(`HTTP ${resposta.status}: ${texto}`);
-                }
-
-                let json;
-                try {
-                    json = texto ? JSON.parse(texto) : null;
-                } catch (erro) {
-                    throw new Error(`Resposta não é JSON válido: ${texto}`);
-                }
-
-                if (json && typeof json === 'object' && 'success' in json) {
-                    return json;
-                }
-
-                throw new Error('Resposta inválida recebida do servidor');
-            } catch (erro) {
-                const mensagemErro = erro && erro.message ? erro.message : String(erro);
-                console.error(`Falha no fallback HTTP (${action || 'sem ação'}):`, mensagemErro, motivoFalha);
-                return { success: false, error: mensagemErro };
-            }
         }
 
         async function carregarDadosIniciais() {
