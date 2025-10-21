@@ -20,6 +20,7 @@ const PASTA_DRIVE_ID = '1nYsGJJUIufxDYVvIanVXCbPx7YuBOYDP';
 const PLANILHA_ID = '';
 
 function obterPlanilha() {
+  var propriedades = obterScriptProperties();
   var ss = null;
 
   try {
@@ -29,31 +30,89 @@ function obterPlanilha() {
   }
 
   if (ss) {
+    armazenarIdPlanilha(ss.getId(), propriedades);
     return ss;
   }
 
+  var idsParaTentar = [];
   var idConfigurado = PLANILHA_ID && PLANILHA_ID.trim ? PLANILHA_ID.trim() : '';
 
-  if (!idConfigurado && typeof PropertiesService !== 'undefined') {
+  if (idConfigurado) {
+    idsParaTentar.push(idConfigurado);
+  }
+
+  if (propriedades) {
     try {
-      var propriedades = PropertiesService.getScriptProperties();
-      if (propriedades) {
-        idConfigurado = propriedades.getProperty('PLANILHA_ID') || '';
+      var idArmazenado = propriedades.getProperty('PLANILHA_ID');
+      if (idArmazenado && idsParaTentar.indexOf(idArmazenado) === -1) {
+        idsParaTentar.push(idArmazenado);
       }
     } catch (error) {
-      idConfigurado = '';
+      Logger.log('Não foi possível recuperar PLANILHA_ID salvo: ' + error);
     }
   }
 
-  if (idConfigurado) {
+  for (var i = 0; i < idsParaTentar.length; i++) {
+    var idAtual = idsParaTentar[i];
     try {
-      return SpreadsheetApp.openById(idConfigurado);
+      ss = SpreadsheetApp.openById(idAtual);
+      if (ss) {
+        armazenarIdPlanilha(ss.getId(), propriedades);
+        return ss;
+      }
     } catch (error) {
-      throw new Error('Não foi possível abrir a planilha configurada (ID: ' + idConfigurado + '). ' + error);
+      Logger.log('Falha ao abrir planilha (ID: ' + idAtual + '): ' + error);
     }
   }
 
-  throw new Error('Nenhuma planilha ativa encontrada. Vincule o script a uma planilha ou informe o ID em PLANILHA_ID.');
+  ss = criarPlanilhaPadrao();
+  armazenarIdPlanilha(ss.getId(), propriedades);
+
+  return ss;
+}
+
+function obterScriptProperties() {
+  if (typeof PropertiesService === 'undefined') {
+    return null;
+  }
+
+  try {
+    return PropertiesService.getScriptProperties();
+  } catch (error) {
+    Logger.log('Não foi possível acessar as propriedades do script: ' + error);
+    return null;
+  }
+}
+
+function armazenarIdPlanilha(id, propriedades) {
+  if (!id || !propriedades) {
+    return;
+  }
+
+  try {
+    propriedades.setProperty('PLANILHA_ID', id);
+  } catch (error) {
+    Logger.log('Não foi possível salvar PLANILHA_ID: ' + error);
+  }
+}
+
+function criarPlanilhaPadrao() {
+  var timestamp = '';
+
+  if (typeof Utilities !== 'undefined') {
+    try {
+      timestamp = Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'ddMMyyyy_HHmmss');
+    } catch (error) {
+      timestamp = String(new Date().getTime());
+    }
+  } else {
+    timestamp = String(new Date().getTime());
+  }
+
+  var nome = 'Sistema Armários Hospitalares - ' + timestamp;
+  var planilha = SpreadsheetApp.create(nome);
+  Logger.log('Planilha padrão criada automaticamente: ' + planilha.getUrl());
+  return planilha;
 }
 
 // Inicializar planilha com todas as abas e cabeçalhos
@@ -499,8 +558,9 @@ function liberarArmario(id, tipo) {
     if (tipo === 'visitante') {
       novaLinha.splice(8, 0, ''); // Hora Prevista
     }
-    
-    novaLinha.push(armarioData[10] || ''); // Unidade
+
+    var indiceUnidade = tipo === 'visitante' ? 10 : 9;
+    novaLinha.push(armarioData[indiceUnidade] || ''); // Unidade
     novaLinha.push(false); // TermoAplicado
     
     sheet.getRange(linha, 1, 1, novaLinha.length).setValues([novaLinha]);

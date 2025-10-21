@@ -2229,9 +2229,46 @@
         }
 
         function mostrarErro(mensagem) {
+            let textoPrincipal = '';
+
+            if (mensagem === undefined || mensagem === null) {
+                textoPrincipal = 'Ocorreu um erro inesperado.';
+            } else if (typeof mensagem === 'string') {
+                textoPrincipal = mensagem;
+            } else if (mensagem && typeof mensagem === 'object') {
+                textoPrincipal = mensagem.message || '';
+                if (!textoPrincipal) {
+                    try {
+                        textoPrincipal = JSON.stringify(mensagem);
+                    } catch (error) {
+                        textoPrincipal = String(mensagem);
+                    }
+                }
+            } else {
+                textoPrincipal = String(mensagem);
+            }
+
+            if (!textoPrincipal) {
+                textoPrincipal = 'Ocorreu um erro inesperado.';
+            }
+
+            let mensagemDetalhe = '';
+
+            if (textoPrincipal === 'google.script.run indisponível') {
+                mensagemDetalhe = 'Abra o sistema pela URL publicada do Google Apps Script (Implantar ▶ Aplicativo da web). Abrir o arquivo index.html diretamente no navegador impede a comunicação com o servidor.';
+            } else if (/Nenhuma planilha ativa/.test(textoPrincipal)) {
+                mensagemDetalhe = 'Recarregue o aplicativo após conceder as permissões solicitadas. Caso não exista uma planilha vinculada, o sistema criará uma automaticamente.';
+            } else if (/Não foi possível abrir a planilha configurada/.test(textoPrincipal)) {
+                mensagemDetalhe = 'Verifique o ID informado em PLANILHA_ID ou limpe a configuração para permitir que o sistema gere uma nova planilha.';
+            }
+
+            const conteudoHtml = mensagemDetalhe
+                ? `<p>${textoPrincipal}</p><p style="margin-top:10px;font-size:0.9em;color:#4a4a4a;">${mensagemDetalhe}</p>`
+                : `<p>${textoPrincipal}</p>`;
+
             Swal.fire({
                 title: 'Erro',
-                text: mensagem,
+                html: conteudoHtml,
                 icon: 'error',
                 confirmButtonText: 'OK'
             });
