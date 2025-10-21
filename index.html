@@ -2061,23 +2061,53 @@
             try {
                 const formData = new FormData();
                 formData.append('action', action);
-                
-                // Adicionar dados ao formData
-                Object.keys(data).forEach(key => {
-                    formData.append(key, data[key]);
-                });
-                
+
+                const appendValue = (key, value) => {
+                    if (value === undefined || value === null) {
+                        return;
+                    }
+
+                    if (value instanceof Date) {
+                        formData.append(key, value.toISOString());
+                        return;
+                    }
+
+                    if (typeof value === 'object') {
+                        formData.append(key, JSON.stringify(value));
+                        return;
+                    }
+
+                    formData.append(key, value);
+                };
+
+                Object.entries(data).forEach(([key, value]) => appendValue(key, value));
+
                 const response = await fetch(SCRIPT_URL, {
                     method: 'POST',
                     body: formData
                 });
-                
-                const result = await response.json();
-                return result;
+
+                const rawPayload = await response.text();
+
+                if (!response.ok) {
+                    const statusText = response.statusText ? ` ${response.statusText}` : '';
+                    const payloadPreview = rawPayload
+                        ? ` - ${rawPayload.slice(0, 200)}${rawPayload.length > 200 ? '...' : ''}`
+                        : '';
+                    throw new Error(`Erro ${response.status}${statusText}${payloadPreview}`.trim());
+                }
+
+                try {
+                    return JSON.parse(rawPayload);
+                } catch (parseError) {
+                    console.error('Resposta inválida do servidor:', rawPayload);
+                    throw new Error('Resposta inválida do servidor');
+                }
             } catch (error) {
                 console.error('Erro ao chamar Google Script:', error);
-                mostrarErro('Erro de conexão com o servidor');
-                return { success: false, error: error.message };
+                const mensagem = error && error.message ? error.message : 'Erro de conexão com o servidor';
+                mostrarErro(mensagem);
+                return { success: false, error: mensagem };
             }
         }
 
@@ -2132,7 +2162,7 @@
         }
 
         async function carregarEstatisticas() {
-            const resultado = await callGoogleScript('getEstatisticasDashboard', {
+            const resultado = await callGoogleScript('getEstatisticas', {
                 tipoUsuario: estado.perfilAtual
             });
             

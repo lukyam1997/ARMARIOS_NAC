@@ -14,6 +14,48 @@ function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
 
+function jsonResponse(payload) {
+  return ContentService.createTextOutput(JSON.stringify(payload))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function tentarParseJSON(valor) {
+  if (typeof valor !== 'string') {
+    return valor;
+  }
+
+  var conteudo = valor.trim();
+  if (!conteudo) {
+    return valor;
+  }
+
+  var primeiroCaractere = conteudo.charAt(0);
+  var ultimoCaractere = conteudo.charAt(conteudo.length - 1);
+
+  if ((primeiroCaractere === '{' && ultimoCaractere === '}') ||
+      (primeiroCaractere === '[' && ultimoCaractere === ']')) {
+    try {
+      return JSON.parse(conteudo);
+    } catch (erro) {
+      return valor;
+    }
+  }
+
+  return valor;
+}
+
+function normalizarParametros(parametros) {
+  var normalizados = {};
+
+  for (var chave in parametros) {
+    if (parametros.hasOwnProperty(chave)) {
+      normalizados[chave] = tentarParseJSON(parametros[chave]);
+    }
+  }
+
+  return normalizados;
+}
+
 // ID da pasta do Drive para salvar os PDFs - ATUALIZE COM SEU ID
 const PASTA_DRIVE_ID = '1nYsGJJUIufxDYVvIanVXCbPx7YuBOYDP';
 
@@ -136,93 +178,74 @@ function adicionarDadosIniciais() {
 // Função principal para lidar com requisições POST
 function handlePost(e) {
   var action = e.parameter.action;
-  
+  var params = normalizarParametros(e.parameter);
+
   try {
     switch(action) {
       case 'getArmarios':
-        return ContentService.createTextOutput(JSON.stringify(getArmarios(e.parameter.tipo)))
-          .setMimeType(ContentService.MimeType.JSON);
-      
+        return jsonResponse(getArmarios(params.tipo));
+
       case 'cadastrarArmario':
-        return ContentService.createTextOutput(JSON.stringify(cadastrarArmario(e.parameter)))
-          .setMimeType(ContentService.MimeType.JSON);
-      
+        return jsonResponse(cadastrarArmario(params));
+
       case 'liberarArmario':
-        return ContentService.createTextOutput(JSON.stringify(liberarArmario(e.parameter.id, e.parameter.tipo)))
-          .setMimeType(ContentService.MimeType.JSON);
-      
+        return jsonResponse(liberarArmario(params.id, params.tipo));
+
       case 'getUsuarios':
-        return ContentService.createTextOutput(JSON.stringify(getUsuarios()))
-          .setMimeType(ContentService.MimeType.JSON);
-      
+        return jsonResponse(getUsuarios());
+
       case 'cadastrarUsuario':
-        return ContentService.createTextOutput(JSON.stringify(cadastrarUsuario(e.parameter)))
-          .setMimeType(ContentService.MimeType.JSON);
-      
+        return jsonResponse(cadastrarUsuario(params));
+
       case 'getLogs':
-        return ContentService.createTextOutput(JSON.stringify(getLogs()))
-          .setMimeType(ContentService.MimeType.JSON);
-      
+        return jsonResponse(getLogs());
+
       case 'getNotificacoes':
-        return ContentService.createTextOutput(JSON.stringify(getNotificacoes()))
-          .setMimeType(ContentService.MimeType.JSON);
-      
+        return jsonResponse(getNotificacoes());
+
       case 'getEstatisticas':
-        return ContentService.createTextOutput(JSON.stringify(getEstatisticasDashboard(e.parameter.tipoUsuario)))
-          .setMimeType(ContentService.MimeType.JSON);
-      
+      case 'getEstatisticasDashboard':
+        return jsonResponse(getEstatisticasDashboard(params.tipoUsuario));
+
       case 'getHistorico':
-        return ContentService.createTextOutput(JSON.stringify(getHistorico(e.parameter.tipo)))
-          .setMimeType(ContentService.MimeType.JSON);
-      
+        return jsonResponse(getHistorico(params.tipo));
+
       case 'getCadastroArmarios':
-        return ContentService.createTextOutput(JSON.stringify(getCadastroArmarios()))
-          .setMimeType(ContentService.MimeType.JSON);
-      
+        return jsonResponse(getCadastroArmarios());
+
       case 'cadastrarArmarioFisico':
-        return ContentService.createTextOutput(JSON.stringify(cadastrarArmarioFisico(e.parameter)))
-          .setMimeType(ContentService.MimeType.JSON);
-      
+        return jsonResponse(cadastrarArmarioFisico(params));
+
       case 'getUnidades':
-        return ContentService.createTextOutput(JSON.stringify(getUnidades()))
-          .setMimeType(ContentService.MimeType.JSON);
-      
+        return jsonResponse(getUnidades());
+
       case 'cadastrarUnidade':
-        return ContentService.createTextOutput(JSON.stringify(cadastrarUnidade(e.parameter)))
-          .setMimeType(ContentService.MimeType.JSON);
-      
+        return jsonResponse(cadastrarUnidade(params));
+
       case 'alternarStatusUnidade':
-        return ContentService.createTextOutput(JSON.stringify(alternarStatusUnidade(e.parameter)))
-          .setMimeType(ContentService.MimeType.JSON);
-      
+        return jsonResponse(alternarStatusUnidade(params));
+
       case 'salvarTermoCompleto':
-        return ContentService.createTextOutput(JSON.stringify(salvarTermoCompleto(e.parameter)))
-          .setMimeType(ContentService.MimeType.JSON);
-      
+        return jsonResponse(salvarTermoCompleto(params));
+
       case 'getTermo':
-        return ContentService.createTextOutput(JSON.stringify(getTermo(e.parameter)))
-          .setMimeType(ContentService.MimeType.JSON);
-      
+        return jsonResponse(getTermo(params));
+
       case 'getMovimentacoes':
-        return ContentService.createTextOutput(JSON.stringify(getMovimentacoes(e.parameter)))
-          .setMimeType(ContentService.MimeType.JSON);
-      
+        return jsonResponse(getMovimentacoes(params));
+
       case 'salvarMovimentacao':
-        return ContentService.createTextOutput(JSON.stringify(salvarMovimentacao(e.parameter)))
-          .setMimeType(ContentService.MimeType.JSON);
-      
+        return jsonResponse(salvarMovimentacao(params));
+
       case 'verificarInicializacao':
-        return ContentService.createTextOutput(JSON.stringify(verificarInicializacao()))
-          .setMimeType(ContentService.MimeType.JSON);
-      
+        return jsonResponse(verificarInicializacao());
+
       default:
-        return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'Ação não reconhecida: ' + action }))
-          .setMimeType(ContentService.MimeType.JSON);
+        return jsonResponse({ success: false, error: 'Ação não reconhecida: ' + action });
     }
   } catch (error) {
     registrarLog('ERRO', `Erro em handlePost: ${error.toString()}`);
-    return ContentService.createTextOutput(JSON.stringify({ success: false, error: error.toString() }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return jsonResponse({ success: false, error: error.toString() });
   }
 }
 
@@ -771,9 +794,56 @@ function alternarStatusUnidade(dados) {
 // Funções para Termos de Responsabilidade
 function salvarTermoCompleto(dadosTermo) {
   try {
+    var volumes = dadosTermo.volumes;
+    if (typeof volumes === 'string') {
+      try {
+        volumes = JSON.parse(volumes);
+      } catch (erroParseVolumes) {
+        volumes = [];
+      }
+    }
+
+    if (!Array.isArray(volumes)) {
+      volumes = [];
+    }
+
+    dadosTermo.volumes = volumes.map(function(volume) {
+      var quantidade = 0;
+      var descricao = '';
+
+      if (volume) {
+        quantidade = Number(volume.quantidade) || 0;
+        descricao = volume.descricao || '';
+      }
+
+      return {
+        quantidade: quantidade,
+        descricao: descricao
+      };
+    });
+
+    var orientacoes = dadosTermo.orientacoes;
+    if (typeof orientacoes === 'string') {
+      try {
+        orientacoes = JSON.parse(orientacoes);
+      } catch (erroParseOrientacoes) {
+        orientacoes = orientacoes.split(',').map(function(item) {
+          return item.trim();
+        }).filter(function(item) {
+          return item.length > 0;
+        });
+      }
+    }
+
+    if (!Array.isArray(orientacoes)) {
+      orientacoes = orientacoes ? [orientacoes] : [];
+    }
+
+    dadosTermo.orientacoes = orientacoes;
+
     // 1. Gerar e salvar PDF no Drive
     var resultadoPDF = gerarESalvarTermoPDF(dadosTermo);
-    
+
     if (!resultadoPDF.success) {
       throw new Error('Erro ao gerar PDF: ' + resultadoPDF.error);
     }
