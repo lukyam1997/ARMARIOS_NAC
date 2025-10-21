@@ -16,11 +16,50 @@ function include(filename) {
 
 // ID da pasta do Drive para salvar os PDFs - ATUALIZE COM SEU ID
 const PASTA_DRIVE_ID = '1nYsGJJUIufxDYVvIanVXCbPx7YuBOYDP';
+// ID opcional da planilha quando o projeto não estiver vinculado diretamente a uma planilha
+const PLANILHA_ID = '';
+
+function obterPlanilha() {
+  var ss = null;
+
+  try {
+    ss = SpreadsheetApp.getActiveSpreadsheet();
+  } catch (error) {
+    ss = null;
+  }
+
+  if (ss) {
+    return ss;
+  }
+
+  var idConfigurado = PLANILHA_ID && PLANILHA_ID.trim ? PLANILHA_ID.trim() : '';
+
+  if (!idConfigurado && typeof PropertiesService !== 'undefined') {
+    try {
+      var propriedades = PropertiesService.getScriptProperties();
+      if (propriedades) {
+        idConfigurado = propriedades.getProperty('PLANILHA_ID') || '';
+      }
+    } catch (error) {
+      idConfigurado = '';
+    }
+  }
+
+  if (idConfigurado) {
+    try {
+      return SpreadsheetApp.openById(idConfigurado);
+    } catch (error) {
+      throw new Error('Não foi possível abrir a planilha configurada (ID: ' + idConfigurado + '). ' + error);
+    }
+  }
+
+  throw new Error('Nenhuma planilha ativa encontrada. Vincule o script a uma planilha ou informe o ID em PLANILHA_ID.');
+}
 
 // Inicializar planilha com todas as abas e cabeçalhos
 function inicializarPlanilha() {
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = obterPlanilha();
     
     // Criar abas se não existirem
     var abas = [
@@ -94,7 +133,7 @@ function inicializarPlanilha() {
 
 // Adicionar dados iniciais de exemplo
 function adicionarDadosIniciais() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = obterPlanilha();
   
   // Cadastrar alguns armários físicos
   var cadastroSheet = ss.getSheetByName('Cadastro Armários');
@@ -163,71 +202,102 @@ function handleClientRequest(request) {
   }
 
   try {
+    var resultado;
+
     switch (action) {
       case 'getArmarios':
-        return getArmarios(data.tipo);
+        resultado = getArmarios(data.tipo);
+        break;
 
       case 'cadastrarArmario':
-        return cadastrarArmario(data);
+        resultado = cadastrarArmario(data);
+        break;
 
       case 'liberarArmario':
-        return liberarArmario(data.id, data.tipo);
+        resultado = liberarArmario(data.id, data.tipo);
+        break;
 
       case 'getUsuarios':
-        return getUsuarios();
+        resultado = getUsuarios();
+        break;
 
       case 'cadastrarUsuario':
-        return cadastrarUsuario(data);
+        resultado = cadastrarUsuario(data);
+        break;
 
       case 'getLogs':
-        return getLogs();
+        resultado = getLogs();
+        break;
 
       case 'getNotificacoes':
-        return getNotificacoes();
+        resultado = getNotificacoes();
+        break;
 
       case 'getEstatisticas':
       case 'getEstatisticasDashboard':
-        return getEstatisticasDashboard(data.tipoUsuario);
+        resultado = getEstatisticasDashboard(data.tipoUsuario);
+        break;
 
       case 'getHistorico':
-        return getHistorico(data.tipo);
+        resultado = getHistorico(data.tipo);
+        break;
 
       case 'getCadastroArmarios':
-        return getCadastroArmarios();
+        resultado = getCadastroArmarios();
+        break;
 
       case 'cadastrarArmarioFisico':
-        return cadastrarArmarioFisico(data);
+        resultado = cadastrarArmarioFisico(data);
+        break;
 
       case 'getUnidades':
-        return getUnidades();
+        resultado = getUnidades();
+        break;
 
       case 'cadastrarUnidade':
-        return cadastrarUnidade(data);
+        resultado = cadastrarUnidade(data);
+        break;
 
       case 'alternarStatusUnidade':
-        return alternarStatusUnidade(data);
+        resultado = alternarStatusUnidade(data);
+        break;
 
       case 'salvarTermoCompleto':
-        return salvarTermoCompleto(data);
+        resultado = salvarTermoCompleto(data);
+        break;
 
       case 'getTermo':
-        return getTermo(data);
+        resultado = getTermo(data);
+        break;
 
       case 'getMovimentacoes':
-        return getMovimentacoes(data);
+        resultado = getMovimentacoes(data);
+        break;
 
       case 'salvarMovimentacao':
-        return salvarMovimentacao(data);
+        resultado = salvarMovimentacao(data);
+        break;
 
       case 'verificarInicializacao':
-        return verificarInicializacao();
+        resultado = verificarInicializacao();
+        break;
 
       case 'inicializarPlanilha':
-        return inicializarPlanilha();
+        resultado = inicializarPlanilha();
+        break;
 
       default:
-        return { success: false, error: 'Ação não reconhecida: ' + action };
+        resultado = { success: false, error: 'Ação não reconhecida: ' + action };
+        break;
     }
+
+    if (!resultado || typeof resultado !== 'object' || typeof resultado.success === 'undefined') {
+      registrarLog('ERRO', 'Resposta inválida gerada pela ação: ' + action);
+      return { success: false, error: 'Resposta inválida para a ação: ' + action };
+    }
+
+    return resultado;
+
   } catch (error) {
     registrarLog('ERRO', `Erro em handleClientRequest (${action}): ${error.toString()}`);
     return { success: false, error: error.toString() };
@@ -237,7 +307,7 @@ function handleClientRequest(request) {
 // Funções para Armários
 function getArmarios(tipo) {
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = obterPlanilha();
     var sheetName = tipo === 'acompanhante' ? 'Acompanhantes' : 'Visitantes';
     var sheet = ss.getSheetByName(sheetName);
     
@@ -286,7 +356,7 @@ function getArmarios(tipo) {
 
 function cadastrarArmario(armarioData) {
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = obterPlanilha();
     var sheetName = armarioData.tipo === 'acompanhante' ? 'Acompanhantes' : 'Visitantes';
     var sheet = ss.getSheetByName(sheetName);
     var historicoSheet = ss.getSheetByName(
@@ -384,7 +454,7 @@ function cadastrarArmario(armarioData) {
 
 function liberarArmario(id, tipo) {
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = obterPlanilha();
     var sheetName = tipo === 'acompanhante' ? 'Acompanhantes' : 'Visitantes';
     var sheet = ss.getSheetByName(sheetName);
     var historicoSheet = ss.getSheetByName(
@@ -480,7 +550,7 @@ function liberarArmario(id, tipo) {
 // Funções para Histórico
 function getHistorico(tipo) {
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = obterPlanilha();
     var sheetName = tipo === 'acompanhante' ? 'Histórico Acompanhantes' : 'Histórico Visitantes';
     var sheet = ss.getSheetByName(sheetName);
     
@@ -521,7 +591,7 @@ function getHistorico(tipo) {
 // Funções para Cadastro de Armários Físicos
 function getCadastroArmarios() {
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = obterPlanilha();
     var sheet = ss.getSheetByName('Cadastro Armários');
     
     if (!sheet || sheet.getLastRow() < 2) {
@@ -555,7 +625,7 @@ function getCadastroArmarios() {
 
 function cadastrarArmarioFisico(armarioData) {
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = obterPlanilha();
     var sheet = ss.getSheetByName('Cadastro Armários');
     
     if (!sheet) {
@@ -632,7 +702,7 @@ function cadastrarArmarioFisico(armarioData) {
 
 function criarArmariosUso(armarios) {
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = obterPlanilha();
     
     armarios.forEach(function(armario) {
       var sheetName = armario[2] === 'visitante' ? 'Visitantes' : 'Acompanhantes';
@@ -672,7 +742,7 @@ function criarArmariosUso(armarios) {
 // Funções para Unidades
 function getUnidades() {
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = obterPlanilha();
     var sheet = ss.getSheetByName('Unidades');
     
     if (!sheet || sheet.getLastRow() < 2) {
@@ -703,7 +773,7 @@ function getUnidades() {
 
 function cadastrarUnidade(dados) {
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = obterPlanilha();
     var sheet = ss.getSheetByName('Unidades');
     
     if (!sheet) {
@@ -742,7 +812,7 @@ function cadastrarUnidade(dados) {
 
 function alternarStatusUnidade(dados) {
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = obterPlanilha();
     var sheet = ss.getSheetByName('Unidades');
     
     if (!sheet) {
@@ -787,7 +857,7 @@ function salvarTermoCompleto(dadosTermo) {
     }
     
     // 2. Salvar na aba "Termos de Responsabilidade"
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = obterPlanilha();
     var sheet = ss.getSheetByName('Termos de Responsabilidade');
     
     if (!sheet) {
@@ -852,7 +922,7 @@ function salvarTermoCompleto(dadosTermo) {
 
 function getTermo(dados) {
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = obterPlanilha();
     var sheet = ss.getSheetByName('Termos de Responsabilidade');
     
     if (!sheet || sheet.getLastRow() < 2) {
@@ -1081,7 +1151,7 @@ function formatarDataParaHTML(data) {
 // Funções para Movimentações
 function getMovimentacoes(dados) {
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = obterPlanilha();
     var sheet = ss.getSheetByName('Movimentações');
     
     if (!sheet || sheet.getLastRow() < 2) {
@@ -1117,7 +1187,7 @@ function getMovimentacoes(dados) {
 
 function salvarMovimentacao(dados) {
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = obterPlanilha();
     var sheet = ss.getSheetByName('Movimentações');
     
     if (!sheet) {
@@ -1166,7 +1236,7 @@ function salvarMovimentacao(dados) {
 // Funções para Usuários
 function getUsuarios() {
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = obterPlanilha();
     var sheet = ss.getSheetByName('Usuários');
     
     if (!sheet || sheet.getLastRow() < 2) {
@@ -1201,7 +1271,7 @@ function getUsuarios() {
 
 function cadastrarUsuario(usuarioData) {
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = obterPlanilha();
     var sheet = ss.getSheetByName('Usuários');
     
     if (!sheet) {
@@ -1245,7 +1315,7 @@ function cadastrarUsuario(usuarioData) {
 // Funções para LOGS
 function registrarLog(acao, detalhes) {
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = obterPlanilha();
     var sheet = ss.getSheetByName('LOGS');
     
     if (!sheet) {
@@ -1271,7 +1341,7 @@ function registrarLog(acao, detalhes) {
 
 function getLogs() {
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = obterPlanilha();
     var sheet = ss.getSheetByName('LOGS');
     
     if (!sheet || sheet.getLastRow() < 2) {
@@ -1419,7 +1489,7 @@ function getEstatisticasDashboard(tipoUsuario) {
 
 // Função para verificar se o sistema está inicializado
 function verificarInicializacao() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = obterPlanilha();
   var abas = [
     'Histórico Visitantes', 
     'Histórico Acompanhantes', 
