@@ -2090,13 +2090,20 @@
 
         async function carregarDadosIniciais() {
             try {
-                // Verificar inicialização
-                const resultado = await callGoogleScript('verificarInicializacao');
-                if (!resultado.success || !resultado.inicializado) {
-                    await callGoogleScript('inicializarPlanilha');
+                const verificacao = await callGoogleScript('verificarInicializacao');
+
+                if (!verificacao.success) {
+                    throw new Error(verificacao.error || 'Falha ao verificar a configuração inicial');
                 }
 
-                // Carregar dados
+                if (!verificacao.inicializado) {
+                    const inicializacao = await callGoogleScript('inicializarPlanilha');
+
+                    if (!inicializacao.success) {
+                        throw new Error(inicializacao.error || 'Não foi possível inicializar a planilha padrão');
+                    }
+                }
+
                 await Promise.all([
                     carregarArmarios(),
                     carregarUnidades(),
@@ -2106,10 +2113,10 @@
                 ]);
 
                 atualizarInterface();
-                
+
             } catch (error) {
                 console.error('Erro ao carregar dados iniciais:', error);
-                mostrarErro('Erro ao carregar dados do sistema');
+                mostrarErro(error && error.message ? error.message : 'Erro ao carregar dados do sistema');
             }
         }
 

@@ -207,10 +207,14 @@ function adicionarDadosIniciais() {
       ['A-03', 'acompanhante', 'UIB', 'Bloco B - 1º Andar', 'ativo', new Date()]
     ];
 
-    armariosIniciais.forEach(function(armario, index) {
-      cadastroSheet.getRange(cadastroSheet.getLastRow() + 1, 1, 1, 6)
-        .setValues([[index + 1, ...armario]]);
+    var linhasArmarios = armariosIniciais.map(function(armario, index) {
+      return [index + 1].concat(armario);
     });
+
+    if (linhasArmarios.length) {
+      cadastroSheet.getRange(2, 1, linhasArmarios.length, 7).setValues(linhasArmarios);
+      criarArmariosUso(linhasArmarios);
+    }
   }
 
   // Cadastrar usuário admin inicial
