@@ -135,94 +135,102 @@ function adicionarDadosIniciais() {
 
 // Função principal para lidar com requisições POST
 function handlePost(e) {
-  var action = e.parameter.action;
-  
   try {
-    switch(action) {
-      case 'getArmarios':
-        return ContentService.createTextOutput(JSON.stringify(getArmarios(e.parameter.tipo)))
-          .setMimeType(ContentService.MimeType.JSON);
-      
-      case 'cadastrarArmario':
-        return ContentService.createTextOutput(JSON.stringify(cadastrarArmario(e.parameter)))
-          .setMimeType(ContentService.MimeType.JSON);
-      
-      case 'liberarArmario':
-        return ContentService.createTextOutput(JSON.stringify(liberarArmario(e.parameter.id, e.parameter.tipo)))
-          .setMimeType(ContentService.MimeType.JSON);
-      
-      case 'getUsuarios':
-        return ContentService.createTextOutput(JSON.stringify(getUsuarios()))
-          .setMimeType(ContentService.MimeType.JSON);
-      
-      case 'cadastrarUsuario':
-        return ContentService.createTextOutput(JSON.stringify(cadastrarUsuario(e.parameter)))
-          .setMimeType(ContentService.MimeType.JSON);
-      
-      case 'getLogs':
-        return ContentService.createTextOutput(JSON.stringify(getLogs()))
-          .setMimeType(ContentService.MimeType.JSON);
-      
-      case 'getNotificacoes':
-        return ContentService.createTextOutput(JSON.stringify(getNotificacoes()))
-          .setMimeType(ContentService.MimeType.JSON);
-      
-      case 'getEstatisticas':
-        return ContentService.createTextOutput(JSON.stringify(getEstatisticasDashboard(e.parameter.tipoUsuario)))
-          .setMimeType(ContentService.MimeType.JSON);
-      
-      case 'getHistorico':
-        return ContentService.createTextOutput(JSON.stringify(getHistorico(e.parameter.tipo)))
-          .setMimeType(ContentService.MimeType.JSON);
-      
-      case 'getCadastroArmarios':
-        return ContentService.createTextOutput(JSON.stringify(getCadastroArmarios()))
-          .setMimeType(ContentService.MimeType.JSON);
-      
-      case 'cadastrarArmarioFisico':
-        return ContentService.createTextOutput(JSON.stringify(cadastrarArmarioFisico(e.parameter)))
-          .setMimeType(ContentService.MimeType.JSON);
-      
-      case 'getUnidades':
-        return ContentService.createTextOutput(JSON.stringify(getUnidades()))
-          .setMimeType(ContentService.MimeType.JSON);
-      
-      case 'cadastrarUnidade':
-        return ContentService.createTextOutput(JSON.stringify(cadastrarUnidade(e.parameter)))
-          .setMimeType(ContentService.MimeType.JSON);
-      
-      case 'alternarStatusUnidade':
-        return ContentService.createTextOutput(JSON.stringify(alternarStatusUnidade(e.parameter)))
-          .setMimeType(ContentService.MimeType.JSON);
-      
-      case 'salvarTermoCompleto':
-        return ContentService.createTextOutput(JSON.stringify(salvarTermoCompleto(e.parameter)))
-          .setMimeType(ContentService.MimeType.JSON);
-      
-      case 'getTermo':
-        return ContentService.createTextOutput(JSON.stringify(getTermo(e.parameter)))
-          .setMimeType(ContentService.MimeType.JSON);
-      
-      case 'getMovimentacoes':
-        return ContentService.createTextOutput(JSON.stringify(getMovimentacoes(e.parameter)))
-          .setMimeType(ContentService.MimeType.JSON);
-      
-      case 'salvarMovimentacao':
-        return ContentService.createTextOutput(JSON.stringify(salvarMovimentacao(e.parameter)))
-          .setMimeType(ContentService.MimeType.JSON);
-      
-      case 'verificarInicializacao':
-        return ContentService.createTextOutput(JSON.stringify(verificarInicializacao()))
-          .setMimeType(ContentService.MimeType.JSON);
-      
-      default:
-        return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'Ação não reconhecida: ' + action }))
-          .setMimeType(ContentService.MimeType.JSON);
-    }
+    var parametros = Object.assign({}, e.parameter || {});
+    var action = parametros.action;
+    delete parametros.action;
+
+    var resultado = handleClientRequest({
+      action: action,
+      data: parametros
+    });
+
+    return ContentService.createTextOutput(JSON.stringify(resultado))
+      .setMimeType(ContentService.MimeType.JSON);
   } catch (error) {
     registrarLog('ERRO', `Erro em handlePost: ${error.toString()}`);
     return ContentService.createTextOutput(JSON.stringify({ success: false, error: error.toString() }))
       .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function handleClientRequest(request) {
+  var action = request && request.action;
+  var data = request && request.data ? request.data : {};
+
+  if (!action) {
+    return { success: false, error: 'Ação não informada' };
+  }
+
+  try {
+    switch (action) {
+      case 'getArmarios':
+        return getArmarios(data.tipo);
+
+      case 'cadastrarArmario':
+        return cadastrarArmario(data);
+
+      case 'liberarArmario':
+        return liberarArmario(data.id, data.tipo);
+
+      case 'getUsuarios':
+        return getUsuarios();
+
+      case 'cadastrarUsuario':
+        return cadastrarUsuario(data);
+
+      case 'getLogs':
+        return getLogs();
+
+      case 'getNotificacoes':
+        return getNotificacoes();
+
+      case 'getEstatisticas':
+      case 'getEstatisticasDashboard':
+        return getEstatisticasDashboard(data.tipoUsuario);
+
+      case 'getHistorico':
+        return getHistorico(data.tipo);
+
+      case 'getCadastroArmarios':
+        return getCadastroArmarios();
+
+      case 'cadastrarArmarioFisico':
+        return cadastrarArmarioFisico(data);
+
+      case 'getUnidades':
+        return getUnidades();
+
+      case 'cadastrarUnidade':
+        return cadastrarUnidade(data);
+
+      case 'alternarStatusUnidade':
+        return alternarStatusUnidade(data);
+
+      case 'salvarTermoCompleto':
+        return salvarTermoCompleto(data);
+
+      case 'getTermo':
+        return getTermo(data);
+
+      case 'getMovimentacoes':
+        return getMovimentacoes(data);
+
+      case 'salvarMovimentacao':
+        return salvarMovimentacao(data);
+
+      case 'verificarInicializacao':
+        return verificarInicializacao();
+
+      case 'inicializarPlanilha':
+        return inicializarPlanilha();
+
+      default:
+        return { success: false, error: 'Ação não reconhecida: ' + action };
+    }
+  } catch (error) {
+    registrarLog('ERRO', `Erro em handleClientRequest (${action}): ${error.toString()}`);
+    return { success: false, error: error.toString() };
   }
 }
 
