@@ -2107,13 +2107,32 @@
         }
 
         async function carregarArmarios() {
-            const resultado = await callGoogleScript('getArmarios', {
-                tipo: estado.perfilAtual
-            });
-            
-            if (resultado.success) {
-                estado.armarios = resultado.data;
+            let tiposParaBuscar = [];
+
+            if (estado.perfilAtual === 'admin' || estado.perfilAtual === 'ambos') {
+                tiposParaBuscar = ['visitante', 'acompanhante'];
+            } else if (estado.perfilAtual === 'visitante' || estado.perfilAtual === 'acompanhante') {
+                tiposParaBuscar = [estado.perfilAtual];
+            } else {
+                tiposParaBuscar = ['visitante'];
             }
+
+            const resultados = await Promise.all(tiposParaBuscar.map(tipo =>
+                callGoogleScript('getArmarios', { tipo })
+            ));
+
+            const armarios = [];
+
+            resultados.forEach((resultado, indice) => {
+                if (resultado?.success && Array.isArray(resultado.data)) {
+                    const tipoAtual = tiposParaBuscar[indice];
+                    resultado.data.forEach(armario => {
+                        armarios.push({ ...armario, tipo: tipoAtual });
+                    });
+                }
+            });
+
+            estado.armarios = armarios;
         }
 
         async function carregarUnidades() {
@@ -2224,8 +2243,12 @@
         function inicializarEventos() {
             // Seletor de perfil
             if (elementos.profileSelect) {
-                elementos.profileSelect.addEventListener('change', function() {
+                elementos.profileSelect.addEventListener('change', async function() {
                     estado.perfilAtual = this.value;
+                    await Promise.all([
+                        carregarArmarios(),
+                        carregarEstatisticas()
+                    ]);
                     atualizarInterface();
                     carregarDadosTabelas();
                 });
