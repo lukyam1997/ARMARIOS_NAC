@@ -1001,6 +1001,12 @@
             font-weight: 500;
         }
 
+        .form-text {
+            margin-top: 4px;
+            font-size: 0.85rem;
+            color: rgba(26, 74, 99, 0.85);
+        }
+
         .form-control {
             width: 100%;
             padding: 10px;
@@ -1612,7 +1618,8 @@
                     </div>
                     <div class="form-group" id="hora-prevista-group">
                         <label for="hora-prevista">Hora Prevista de Saída</label>
-                        <input type="time" id="hora-prevista" class="form-control" required>
+                        <input type="time" id="hora-prevista" class="form-control" required readonly>
+                        <div class="form-text">Horário calculado automaticamente uma hora após o cadastro.</div>
                     </div>
                     <div class="form-actions">
                         <button type="button" class="btn btn-secondary" id="btn-cancelar">Cancelar</button>
@@ -1795,9 +1802,21 @@
                                     <div class="wizard-field" id="termo-volumes-field">
                                         <label class="wizard-required">Quantidade e descrição de bolsas/pacotes</label>
                                         <div class="wizard-volumes-list" id="termo-volumes-list"></div>
+                                        <datalist id="termo-itens-padrao">
+                                            <option value="Mochila"></option>
+                                            <option value="Bolsa"></option>
+                                            <option value="Celular"></option>
+                                            <option value="Notebook"></option>
+                                            <option value="Carregador"></option>
+                                            <option value="Carteira"></option>
+                                            <option value="Documentos"></option>
+                                            <option value="Roupas"></option>
+                                            <option value="Sacola"></option>
+                                            <option value="Outros"></option>
+                                        </datalist>
                                         <div class="wizard-inline" style="margin-top: 8px; align-items: center;">
                                             <button type="button" class="btn btn-ghost" id="termo-add-volume">+ Adicionar volume</button>
-                                            <span class="wizard-hint">Informe a quantidade e descreva cada volume guardado.</span>
+                                            <span class="wizard-hint">Informe a quantidade e descreva cada volume guardado (há sugestões prontas na lista).</span>
                                         </div>
                                         <div class="wizard-error">Informe ao menos um volume com quantidade e descrição.</div>
                                     </div>
@@ -1981,6 +2000,7 @@
             modalClose: document.getElementById('modal-close'),
             usuarioModalClose: document.getElementById('usuario-modal-close'),
             btnCancelar: document.getElementById('btn-cancelar'),
+            btnSalvar: document.getElementById('btn-salvar'),
             usuarioBtnCancelar: document.getElementById('usuario-btn-cancelar'),
             nomeVisitanteLabel: document.querySelector("label[for='nome-visitante']"),
             horaPrevistaInput: document.getElementById('hora-prevista'),
@@ -2065,6 +2085,9 @@
             }
 
             return new Promise(resolve => {
+                const maxTentativas = acao === 'bootstrapSistema' ? 2 : 1;
+                let tentativas = 0;
+
                 const tratarResposta = (respostaBruta) => {
                     try {
                         const respostaNormalizada = interpretarRespostaBruta(respostaBruta, acao);
@@ -2074,11 +2097,22 @@
                             return;
                         }
 
-                        const mensagemErro = `Resposta inválida do servidor${acao ? ` (ação: ${acao})` : ''}`;
-                        console.error(`${mensagemErro}:`, respostaBruta);
+                        if (tentativas < maxTentativas) {
+                            console.warn(`Resposta inválida do servidor${acao ? ` (ação: ${acao})` : ''}. Nova tentativa (${tentativas + 1}/${maxTentativas}).`, respostaBruta);
+                            executar();
+                            return;
+                        }
+
+                        const mensagemErro = 'Não conseguimos sincronizar os dados com a planilha. Tente novamente em instantes.';
+                        console.error(`${mensagemErro}${acao ? ` (ação: ${acao})` : ''}:`, respostaBruta);
                         mostrarErro(mensagemErro);
                         resolve({ success: false, error: mensagemErro });
                     } catch (erroTratamento) {
+                        if (tentativas < maxTentativas) {
+                            console.warn(`Erro ao processar resposta${acao ? ` da ação ${acao}` : ''}. Nova tentativa (${tentativas + 1}/${maxTentativas}).`, erroTratamento);
+                            executar();
+                            return;
+                        }
                         const mensagemErro = `Erro ao processar resposta${acao ? ` da ação ${acao}` : ''}: ${erroTratamento?.message || erroTratamento}`;
                         console.error(mensagemErro, erroTratamento);
                         mostrarErro(mensagemErro);
@@ -2087,6 +2121,12 @@
                 };
 
                 const tratarFalha = (error) => {
+                    if (tentativas < maxTentativas) {
+                        console.warn(`Falha na chamada ao Google Script${acao ? ` (${acao})` : ''}. Nova tentativa (${tentativas + 1}/${maxTentativas}).`, error);
+                        executar();
+                        return;
+                    }
+
                     console.error(`Erro ao chamar Google Script (${acao || 'ação não informada'}):`, error);
                     const mensagemErroBase = `Erro de conexão com o servidor${acao ? ` (ação: ${acao})` : ''}`;
                     const mensagemErro = typeof error === 'string'
@@ -2096,15 +2136,61 @@
                     resolve({ success: false, error: mensagemErro || mensagemErroBase });
                 };
 
-                try {
-                    google.script.run
-                        .withSuccessHandler(tratarResposta)
-                        .withFailureHandler(tratarFalha)
-                        .handleClientRequest({ action: acao, data });
-                } catch (erroExecucao) {
-                    tratarFalha(erroExecucao);
-                }
+                const executar = () => {
+                    tentativas += 1;
+                    try {
+                        google.script.run
+                            .withSuccessHandler(tratarResposta)
+                            .withFailureHandler(tratarFalha)
+                            .handleClientRequest({ action: acao, data });
+                    } catch (erroExecucao) {
+                        tratarFalha(erroExecucao);
+                    }
+                };
+
+                executar();
             });
+        }
+
+        function calcularHoraPrevistaAutomatica(baseDate = new Date()) {
+            let referencia = baseDate instanceof Date && !Number.isNaN(baseDate.getTime())
+                ? new Date(baseDate.getTime())
+                : new Date();
+
+            if (!(referencia instanceof Date) || Number.isNaN(referencia.getTime())) {
+                referencia = new Date();
+            }
+
+            referencia.setMinutes(referencia.getMinutes() + 60);
+
+            const horas = referencia.getHours().toString().padStart(2, '0');
+            const minutos = referencia.getMinutes().toString().padStart(2, '0');
+            return `${horas}:${minutos}`;
+        }
+
+        function atualizarHoraPrevistaAutomatica() {
+            if (!elementos.horaPrevistaInput) return;
+            const valor = calcularHoraPrevistaAutomatica();
+            elementos.horaPrevistaInput.value = valor;
+        }
+
+        function setBotaoSalvarCarregando(ativo) {
+            const botao = elementos.btnSalvar;
+            if (!botao) return;
+
+            if (ativo) {
+                if (!botao.dataset.textoOriginal) {
+                    botao.dataset.textoOriginal = botao.textContent.trim() || 'Salvar';
+                }
+                botao.classList.add('btn-loading');
+                botao.disabled = true;
+                botao.textContent = 'Salvando...';
+            } else {
+                const textoOriginal = botao.dataset.textoOriginal || 'Salvar';
+                botao.classList.remove('btn-loading');
+                botao.disabled = false;
+                botao.textContent = textoOriginal;
+            }
         }
 
         function interpretarRespostaBruta(respostaBruta, action) {
@@ -3029,6 +3115,7 @@
             if (armario.status === 'livre') {
                 elementos.modalTitle.textContent = `Cadastrar Armário ${armario.numero}`;
                 elementos.armarioForm.reset();
+                setBotaoSalvarCarregando(false);
 
                 elementos.nomeVisitanteLabel.textContent =
                     armario.tipo === 'visitante' ? 'Nome do Visitante' : 'Nome do Acompanhante';
@@ -3039,7 +3126,10 @@
                 elementos.horaPrevistaGroup.style.display = exigeHoraPrevista ? 'block' : 'none';
                 elementos.horaPrevistaInput.required = exigeHoraPrevista;
                 elementos.horaPrevistaInput.disabled = !exigeHoraPrevista;
-                if (!exigeHoraPrevista) {
+                elementos.horaPrevistaInput.readOnly = exigeHoraPrevista;
+                if (exigeHoraPrevista) {
+                    atualizarHoraPrevistaAutomatica();
+                } else {
                     elementos.horaPrevistaInput.value = '';
                 }
 
@@ -3047,6 +3137,9 @@
                 elementos.armarioForm.dataset.id = armario.id;
                 elementos.armarioForm.dataset.tipo = armario.tipo;
                 elementos.armarioModal.style.display = 'flex';
+                setTimeout(() => {
+                    document.getElementById('nome-visitante')?.focus();
+                }, 150);
             } else {
                 const termoHtml = armario.tipo === 'acompanhante'
                     ? `<div class="info-box" style="margin-top:12px;">Termo de responsabilidade: <strong>${armario.termoAplicado ? 'Aplicado' : 'Pendente'}</strong>${armario.termoAplicado ? '' : '<br><small>Finalize o termo antes da primeira movimentação.</small>'}</div>`
@@ -3287,6 +3380,7 @@
         // Fechar modais
         function fecharModalArmario() {
             elementos.armarioModal.style.display = 'none';
+            setBotaoSalvarCarregando(false);
         }
 
         function fecharModalUsuario() {
@@ -3295,8 +3389,18 @@
 
         // Salvar armário (cadastro)
         async function salvarArmario() {
-            const id = parseInt(elementos.armarioForm.dataset.id);
+            const idBruto = Number.parseInt(elementos.armarioForm.dataset.id, 10);
+            if (Number.isNaN(idBruto)) {
+                mostrarErro('Não foi possível identificar o armário selecionado. Abra novamente o cadastro.');
+                return;
+            }
+            const id = idBruto;
             const tipo = elementos.armarioForm.dataset.tipo || 'visitante';
+            const horaPrevista = tipo === 'visitante' ? calcularHoraPrevistaAutomatica() : '';
+
+            if (tipo === 'visitante' && elementos.horaPrevistaInput) {
+                elementos.horaPrevistaInput.value = horaPrevista;
+            }
 
             const dados = {
                 id: id,
@@ -3305,28 +3409,37 @@
                 nomePaciente: document.getElementById('nome-paciente').value.trim(),
                 leito: document.getElementById('leito').value.trim(),
                 volumes: parseInt(document.getElementById('volumes').value, 10),
-                horaPrevista: tipo === 'visitante' ? document.getElementById('hora-prevista').value : '',
+                horaPrevista: horaPrevista,
                 tipo: tipo
             };
 
-            const resultado = await callGoogleScript('cadastrarArmario', dados);
+            setBotaoSalvarCarregando(true);
 
-            if (resultado.success) {
-                fecharModalArmario();
-                
-                // Recarregar dados
-                await carregarArmarios();
-                await carregarEstatisticas();
-                atualizarInterface();
-                carregarDadosTabelas();
+            try {
+                const resultado = await callGoogleScript('cadastrarArmario', dados);
 
-                if (tipo === 'acompanhante') {
-                    abrirTermoWizard(id);
+                if (resultado.success) {
+                    fecharModalArmario();
+
+                    // Recarregar dados
+                    await carregarArmarios();
+                    await carregarEstatisticas();
+                    atualizarInterface();
+                    carregarDadosTabelas();
+
+                    if (tipo === 'acompanhante') {
+                        abrirTermoWizard(id);
+                    } else {
+                        mostrarSucesso('Armário cadastrado com sucesso');
+                    }
                 } else {
-                    mostrarSucesso('Armário cadastrado com sucesso');
+                    mostrarErro(resultado.error || 'Não foi possível cadastrar o armário.');
                 }
-            } else {
-                mostrarErro(resultado.error);
+            } catch (erroSalvar) {
+                console.error('Erro ao salvar armário:', erroSalvar);
+                mostrarErro('Erro ao salvar o armário. Tente novamente.');
+            } finally {
+                setBotaoSalvarCarregando(false);
             }
         }
 
@@ -3530,6 +3643,8 @@
             inputDesc.type = 'text';
             inputDesc.placeholder = 'Ex.: mochila azul';
             inputDesc.className = 'wizard-input termo-volume-desc';
+            inputDesc.setAttribute('list', 'termo-itens-padrao');
+            inputDesc.setAttribute('autocomplete', 'off');
             if (dados.descricao) {
                 inputDesc.value = dados.descricao;
             }

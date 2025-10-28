@@ -531,6 +531,25 @@ function cadastrarArmario(armarioData) {
     
     // Preparar dados para a aba atual
     var agora = new Date();
+    var horaPrevistaCalculada = '';
+
+    if (armarioData.tipo === 'visitante') {
+      var horaPrevistaData = new Date(agora.getTime() + (60 * 60 * 1000));
+
+      if (typeof Utilities !== 'undefined' && Utilities.formatDate) {
+        var timezone = (typeof Session !== 'undefined' && Session.getScriptTimeZone)
+          ? Session.getScriptTimeZone()
+          : 'America/Sao_Paulo';
+        horaPrevistaCalculada = Utilities.formatDate(horaPrevistaData, timezone, 'HH:mm');
+      } else {
+        var horas = horaPrevistaData.getHours().toString().padStart(2, '0');
+        var minutos = horaPrevistaData.getMinutes().toString().padStart(2, '0');
+        horaPrevistaCalculada = horas + ':' + minutos;
+      }
+
+      armarioData.horaPrevista = horaPrevistaCalculada;
+    }
+
     var novaLinha = [
       novoId,
       armarioFisico[1], // número
@@ -546,7 +565,7 @@ function cadastrarArmario(armarioData) {
     ];
     
     if (armarioData.tipo === 'visitante') {
-      novaLinha.splice(8, 0, armarioData.horaPrevista);
+      novaLinha.splice(8, 0, armarioData.horaPrevista || horaPrevistaCalculada);
     }
     
     sheet.getRange(lastRow + 1, 1, 1, novaLinha.length).setValues([novaLinha]);
